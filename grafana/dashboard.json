@@ -1,0 +1,256 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 100,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "filterable": false,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Complete"
+            },
+            "properties": [
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "yellow",
+                        "index": 1,
+                        "text": "No"
+                      },
+                      "true": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "Yes"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "noValue",
+                "value": "-"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TaskID"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 193
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Name"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 395
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 25,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "footer": {
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "9.3.0",
+      "targets": [
+        {
+          "command": "",
+          "query": "eval \"\nlocal prefix = KEYS[1]\nlocal sorted_set = redis.call('ZRANGE', prefix .. ':register', 0, -1)\nlocal hash_data = redis.call('HMGET', prefix .. ':tasks', unpack(sorted_set))\nlocal result = {}\n\nfor task_id, value in ipairs(hash_data) do\n  local state = cjson.decode(value)\n  local remaining_tasks = redis.call('SCARD', prefix .. ':subtasks_register:' .. task_id)\n\n  local metadata = state['metadata'] or {}\n\n  state['remainingTasks'] = remaining_tasks\n  state['complete'] = remaining_tasks == 0\n  state['duration'] = cjson.null\n\n  if state['completeAt'] then\n    state['duration'] = state['completeAt'] - state['addedAt']\n  end\n\n  for key, value in pairs(metadata) do\n    state[key] = value\n  end\n\n  if state['metadata'] then\n    table.delete(state, 'metadata')\n  end\n\n  if not state['completeAt'] then\n    state['completeAt'] = cjson.null\n  end\n\n  table.insert(result, cjson.encode(state))\nend\n\nreturn result\n\" 1 ${prefix}",
+          "refId": "A",
+          "type": "cli"
+        }
+      ],
+      "title": "Tasks monitoring",
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "format": "json",
+            "replace": true,
+            "source": "Value"
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "destinationType": "time",
+                "targetField": "addedAt"
+              },
+              {
+                "destinationType": "number",
+                "targetField": "subtasksCount"
+              },
+              {
+                "destinationType": "boolean",
+                "targetField": "complete"
+              },
+              {
+                "destinationType": "number",
+                "targetField": "duration"
+              },
+              {
+                "destinationType": "time",
+                "targetField": "completeAt"
+              }
+            ],
+            "fields": {}
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "v": true
+            },
+            "indexByName": {
+              "addedAt": 2,
+              "complete": 7,
+              "completeAt": 3,
+              "duration": 6,
+              "id": 0,
+              "name": 1,
+              "remainingTasks": 5,
+              "subtasksCount": 4,
+              "v": 8
+            },
+            "renameByName": {
+              "addedAt": "Added At (by system TZ)",
+              "complete": "Complete",
+              "completeAt": "Completed At (by system TZ)",
+              "duration": "Duration",
+              "id": "TaskID",
+              "name": "Name",
+              "remainingTasks": "Remaining tasks count",
+              "subtasksCount": "SubTasks count",
+              "v": ""
+            }
+          }
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "schemaVersion": 37,
+  "style": "dark",
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "hide": 2,
+        "name": "prefix",
+        "query": "tm",
+        "skipUrlSync": false,
+        "type": "constant"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Redis task monitoring",
+  "uid": "pZGIbE5Nk",
+  "version": 11,
+  "weekStart": ""
+}
