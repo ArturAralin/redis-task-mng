@@ -66,7 +66,16 @@ function mapTaskState(dbState: TaskDbState, remainingTasks: number): TaskState {
   };
 }
 
+interface TaskTrackerParams {
+  redis: Redis;
+  prefix?: string;
+}
+
 export class TaskTracker {
+  private redis: Redis;
+
+  private ready: Promise<void>;
+
   private prefix: string;
 
   private tasksStateKey: string;
@@ -85,18 +94,29 @@ export class TaskTracker {
 
   private subTaskFailedLua: string | null = null;
 
-
-  constructor(
-    private readonly redis: Redis,
-  ) {
-    this.prefix = 'tm';
+  constructor(params: TaskTrackerParams) {
+    this.redis = params.redis;
+    this.prefix = params.prefix || 'tm';
     this.tasksStateKey = `${this.prefix}:tasks`;
     this.tasksRegisterKey = `${this.prefix}:register`;
     this.subTasksStateKey = `${this.prefix}:subtasks`;
     this.subTasksRegisterPrefix = `${this.prefix}:subtasks_register`;
+
+    this.ready = this.redis.status === 'ready'
+      ? this.init()
+      : new Promise((resolve, reject) => {
+        this.redis.once('ready', async () => {
+          await this.init();
+          resolve();
+        });
+
+        this.redis.once('error', (err) => {
+          reject(err);
+        });
+      });
   }
 
-  async init() {
+  private async init(): Promise<void> {
     const luaCreateTask = `
       local task_id = KEYS[1]
       local added_at = KEYS[2]
@@ -395,5 +415,9 @@ export class TaskTracker {
     );
 
     return !has;
+  }
+
+  async waitReadiness(): Promise<void> {
+    return this.ready;
   }
 }

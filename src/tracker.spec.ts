@@ -8,10 +8,13 @@ describe('TaskTracker', () => {
 
   beforeAll(async () => {
     redis = new Redis();
-    tracker = new TaskTracker(redis);
+
+    tracker = new TaskTracker({
+      redis,
+    });
 
     await redis.ping();
-    await tracker.init();
+    await tracker.waitReadiness();
   });
 
   afterAll(() => redis.disconnect());
