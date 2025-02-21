@@ -10,10 +10,14 @@ export enum ProgressStateEnum {
 interface TaskDbState {
   id: string;
   addedAt: number;
+  completeAt?: number;
   subtasksCount: number;
   name?: string;
+  metadata?: Metadata;
   v: 1;
 }
+
+type Metadata = Record<string, string | number | boolean>;
 
 export interface CreateSubTask {
   subTaskId: string;
@@ -32,8 +36,10 @@ export interface TaskState {
   id: string;
   name: string | null;
   addedAt: number;
+  completeAt: number | null;
   subtasksCount: number;
   subtasksRemaining: number;
+  metadata: Metadata | null;
   complete: boolean;
 }
 
@@ -51,10 +57,12 @@ function mapTaskState(dbState: TaskDbState, remainingTasks: number): TaskState {
   return {
     id: dbState.id,
     addedAt: dbState.addedAt,
+    completeAt: dbState.completeAt || null,
     subtasksCount: dbState.subtasksCount,
     subtasksRemaining: remainingTasks,
     complete: remainingTasks === 0,
     name: dbState.name || null,
+    metadata: dbState.metadata || null,
   };
 }
 
@@ -105,7 +113,7 @@ export class TaskTracker {
     const luaCompleteSubTask = `
       local task_id = KEYS[1]
       local subtask_id = KEYS[2]
-      local completed_at = KEYS[3]
+      local completed_at = tonumber(KEYS[3])
 
       local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state')
 
@@ -118,7 +126,17 @@ export class TaskTracker {
       redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}finished_at', completed_at)
       redis.call('SREM', '${this.subTasksRegisterPrefix}:' .. task_id, subtask_id)
 
-      return redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. task_id)
+      local remaining_tasks = redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. task_id)
+
+      if remaining_tasks == 0 then
+        local task_json_state = redis.call('HGET', '${this.tasksStateKey}', task_id)
+        local task_state = cjson.decode(task_json_state)
+        task_state['completeAt'] = completed_at
+
+        redis.call('HSET', '${this.tasksStateKey}', task_id, cjson.encode(task_state))
+      end
+
+      return remaining_tasks
     `;
 
 
@@ -161,7 +179,8 @@ export class TaskTracker {
 
   async createTask(taskId: string, params: {
     name?: string;
-    subtasks: CreateSubTask[]
+    metadata?: Metadata;
+    subtasks: CreateSubTask[];
   }): Promise<void> {
     if (params.subtasks.length === 0) {
       throw new Error('No subtasks');
@@ -171,12 +190,10 @@ export class TaskTracker {
       throw new Error('TaskTracker not initialized');
     }
 
-    // todo: check duplication cases
-
     const existingTask = await this.redis.exists(`${this.tasksStateKey}:${taskId}`);
 
     if (existingTask) {
-      throw new Error('Task already exists');
+      throw new Error(`Task with id ${taskId} already exists`);
     }
 
     const taskState: TaskDbState = {
@@ -184,6 +201,7 @@ export class TaskTracker {
       addedAt: Date.now(),
       subtasksCount: params.subtasks.length,
       name: params.name,
+      metadata: params.metadata,
       v: 1,
     };
 

@@ -148,6 +148,7 @@ describe('TaskTracker', () => {
     expect(taskState).toMatchObject({
       id: taskId,
       addedAt: expect.any(Number),
+      completeAt: null,
       subtasksCount: 4,
       subtasksRemaining: 3,
       complete: false,
@@ -270,9 +271,36 @@ describe('TaskTracker', () => {
     expect(taskState).toMatchObject({
       id: taskId,
       addedAt: expect.any(Number),
+      completeAt: expect.any(Number),
       subtasksCount: 3,
       subtasksRemaining: 0,
       complete: true,
+    });
+  });
+
+  test('should task with metadata', async () => {
+    const taskId: string = uuid.v4();
+
+    await tracker.createTask(taskId, {
+      metadata: {
+        boolField: false,
+        stringField: 'string',
+        numberField: -20,
+      },
+      subtasks: [
+        { subTaskId: 'stId' }
+      ]
+    });
+
+    const taskState = await tracker.getTaskState(taskId);
+
+    expect(taskState).toMatchObject({
+      id: taskId,
+      metadata: {
+        boolField: false,
+        stringField: 'string',
+        numberField: -20,
+      }
     });
   })
 });
