@@ -47,7 +47,6 @@ describe('TaskTracker', () => {
     })
   });
 
-
   test('complete one subtask', async () => {
     const taskId: string = uuid.v4();
 
