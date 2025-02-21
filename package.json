@@ -1,13 +1,13 @@
 {
   "name": "redis-task-mng",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "dist/lib.js",
   "license": "MIT",
   "peerDependencies": {
     "ioredis": "5.x"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -Rf dist && tsc",
     "test": "jest ./src/**.spec.ts"
   },
   "devDependencies": {

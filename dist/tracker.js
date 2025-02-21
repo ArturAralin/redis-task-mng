@@ -28,10 +28,12 @@ function mapTaskState(dbState, remainingTasks) {
     return {
         id: dbState.id,
         addedAt: dbState.addedAt,
+        completeAt: dbState.completeAt || null,
         subtasksCount: dbState.subtasksCount,
         subtasksRemaining: remainingTasks,
         complete: remainingTasks === 0,
         name: dbState.name || null,
+        metadata: dbState.metadata || null,
     };
 }
 class TaskTracker {
@@ -64,7 +66,7 @@ class TaskTracker {
             const luaCompleteSubTask = `
       local task_id = KEYS[1]
       local subtask_id = KEYS[2]
-      local completed_at = KEYS[3]
+      local completed_at = tonumber(KEYS[3])
 
       local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state')
 
@@ -77,7 +79,17 @@ class TaskTracker {
       redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}finished_at', completed_at)
       redis.call('SREM', '${this.subTasksRegisterPrefix}:' .. task_id, subtask_id)
 
-      return redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. task_id)
+      local remaining_tasks = redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. task_id)
+
+      if remaining_tasks == 0 then
+        local task_json_state = redis.call('HGET', '${this.tasksStateKey}', task_id)
+        local task_state = cjson.decode(task_json_state)
+        task_state['completeAt'] = completed_at
+
+        redis.call('HSET', '${this.tasksStateKey}', task_id, cjson.encode(task_state))
+      end
+
+      return remaining_tasks
     `;
             const luaSubTaskInProgress = `
       local task_id = KEYS[1]
@@ -122,16 +134,16 @@ class TaskTracker {
             if (!this.createTaskLua) {
                 throw new Error('TaskTracker not initialized');
             }
-            // todo: check duplication cases
             const existingTask = yield this.redis.exists(`${this.tasksStateKey}:${taskId}`);
             if (existingTask) {
-                throw new Error('Task already exists');
+                throw new Error(`Task with id ${taskId} already exists`);
             }
             const taskState = {
                 id: taskId,
                 addedAt: Date.now(),
                 subtasksCount: params.subtasks.length,
                 name: params.name,
+                metadata: params.metadata,
                 v: 1,
             };
             const subtasksIds = params.subtasks.map((subtask) => subtask.subTaskId);

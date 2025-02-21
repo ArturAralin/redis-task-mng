@@ -5,6 +5,7 @@ export declare enum ProgressStateEnum {
     InProgress = 1,
     Complete = 2
 }
+type Metadata = Record<string, string | number | boolean>;
 export interface CreateSubTask {
     subTaskId: string;
 }
@@ -20,8 +21,10 @@ export interface TaskState {
     id: string;
     name: string | null;
     addedAt: number;
+    completeAt: number | null;
     subtasksCount: number;
     subtasksRemaining: number;
+    metadata: Metadata | null;
     complete: boolean;
 }
 export declare class TaskTracker {
@@ -39,6 +42,7 @@ export declare class TaskTracker {
     init(): Promise<void>;
     createTask(taskId: string, params: {
         name?: string;
+        metadata?: Metadata;
         subtasks: CreateSubTask[];
     }): Promise<void>;
     getTasks(params?: {
@@ -57,4 +61,5 @@ export declare class TaskTracker {
     failSubTask(taskId: string, subTaskId: string): Promise<void>;
     isSubTaskComplete(taskId: string, subTaskId: string): Promise<boolean>;
 }
+export {};
 //# sourceMappingURL=tracker.d.ts.map
