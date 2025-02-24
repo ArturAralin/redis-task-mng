@@ -550,7 +550,6 @@ export class TaskTracker {
     subTaskId: string,
   ): Promise<SubTaskPoint[]> {
     const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
-    console.log('object');
     const points = await this.redis.zrange(
       `${this.subTaskPointPrefix}:${seqId}:${subTaskId}`,
       0,

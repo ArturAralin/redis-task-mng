@@ -144,9 +144,17 @@ function expressUiServer(options) {
                 seqIds: [req.params.seqId],
             });
             const points = await options.client.getSubTaskPoints(task.taskId, req.params.subtaskId);
+            const extendedPoints = [
+                {
+                    subTaskId: req.params.subtaskId,
+                    event: tracker_1.SubTaskEvents.Added,
+                    timestamp: task.addedAt,
+                },
+                ...points,
+            ];
             res.send(renderPointsPage({
                 pageTitle: 'Points',
-                points: points.map(point => ({
+                points: extendedPoints.map(point => ({
                     ...point,
                     timestamp: (0, utils_1.prettifyUnixTs)(point.timestamp),
                     ...mapPointEvent(point.event),
@@ -182,6 +190,11 @@ function mapPointEvent(event) {
         case tracker_1.SubTaskEvents.Checkpoint:
             return {
                 event: 'Checkpoint',
+                eventColor: constants_1.NEW_COLOR,
+            };
+        case tracker_1.SubTaskEvents.Added:
+            return {
+                event: 'Added',
                 eventColor: constants_1.NEW_COLOR,
             };
         default:

@@ -11,6 +11,7 @@ var SubTaskStates;
 var SubTaskEvents;
 (function (SubTaskEvents) {
     SubTaskEvents[SubTaskEvents["Failed"] = -1] = "Failed";
+    SubTaskEvents[SubTaskEvents["Added"] = 0] = "Added";
     SubTaskEvents[SubTaskEvents["InProgress"] = 1] = "InProgress";
     SubTaskEvents[SubTaskEvents["Complete"] = 2] = "Complete";
     SubTaskEvents[SubTaskEvents["Checkpoint"] = 3] = "Checkpoint";
@@ -335,7 +336,6 @@ class TaskTracker {
     }
     async getSubTaskPoints(taskId, subTaskId) {
         const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
-        console.log('object');
         const points = await this.redis.zrange(`${this.subTaskPointPrefix}:${seqId}:${subTaskId}`, 0, -1);
         return points.map(point => {
             const dbPoint = JSON.parse(point);

@@ -7,6 +7,7 @@ export declare enum SubTaskStates {
 }
 export declare enum SubTaskEvents {
     Failed = -1,
+    Added = 0,
     InProgress = 1,
     Complete = 2,
     Checkpoint = 3
