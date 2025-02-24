@@ -1,6 +1,7 @@
 export {
   TaskTracker,
-  ProgressStateEnum,
+  SubTaskStates,
   TaskState,
-  SubTaskState
+  SubTaskState,
 } from './tracker';
+export { expressUiServer } from './ui/ui';

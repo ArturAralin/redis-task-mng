@@ -1,0 +1,63 @@
+<h2>Dashboard</h2>
+<div class="grid">
+  <div>
+    <article>
+      <header>
+        Recent tasks for the last 24 hours
+      </header>
+      {{#each recentTasks}}
+      <p><a href="{{this.pageUrl}}">{{name}}</a></p>
+      {{/each}}
+    </article>
+  </div>
+  <div>
+    <article>
+      <header>
+        Sub tasks statuses distribution for the last 24 hours
+      </header>
+      <div class="grid">
+        <div
+          style="text-align: center; margin: auto;"
+        ><canvas id="taskStatusesDistribution"></canvas></div>
+      </div>
+    </article>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const taskStatusesDistribution = document.getElementById('taskStatusesDistribution');
+
+  new Chart(taskStatusesDistribution, {
+    type: 'pie',
+    data: {
+      labels: [
+        'New ({{subTasksStats.new}})',
+        'Started ({{subTasksStats.inProgress}})',
+        'Completed ({{subTasksStats.completed}})',
+        'Failed ({{subTasksStats.failed}})',
+      ],
+      datasets: [{
+        data: [
+          {{subTasksStats.new}},
+          {{subTasksStats.inProgress}},
+          {{subTasksStats.completed}},
+          {{subTasksStats.failed}},
+        ],
+        backgroundColor: [
+          'rgb(82, 95, 122)',
+          'rgb(60, 113, 247)',
+          'rgb(0, 137, 90)',
+          'rgb(217, 53, 38)',
+        ]
+      }]
+    },
+    options: {
+      responsive: false,
+      plugins: {
+        legend: {
+          position: 'right',
+        },
+      }
+    },
+  });
+</script>
