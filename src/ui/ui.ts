@@ -210,10 +210,19 @@ export function expressUiServer(options: UIOptions): express.Router {
           req.params.subtaskId,
         );
 
+        const extendedPoints = [
+          {
+            subTaskId: req.params.subtaskId,
+            event: SubTaskEvents.Added,
+            timestamp: task.addedAt,
+          },
+          ...points,
+        ];
+
         res.send(
           renderPointsPage({
             pageTitle: 'Points',
-            points: points.map(point => ({
+            points: extendedPoints.map(point => ({
               ...point,
               timestamp: prettifyUnixTs(point.timestamp),
               ...mapPointEvent(point.event),
@@ -258,6 +267,11 @@ function mapPointEvent(event: SubTaskEvents): {
         event: 'Checkpoint',
         eventColor: NEW_COLOR,
       };
+    case SubTaskEvents.Added:
+      return {
+        event: 'Added',
+        eventColor: NEW_COLOR,
+      }
     default:
       return {
         event,
