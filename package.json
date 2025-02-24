@@ -1,13 +1,14 @@
 {
   "name": "redis-task-mng",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "dist/lib.js",
   "license": "MIT",
   "peerDependencies": {
     "ioredis": "5.x"
   },
   "scripts": {
-    "build": "rm -Rf dist && tsc",
+    "non-ts-to-dist": "cp -R src/ui/static dist/src/ui/static && cp -R src/ui/templates dist/src/ui/templates",
+    "build": "rm -Rf dist && tsc && yarn non-ts-to-dist",
     "test": "jest ./src/**.spec.ts",
     "start-server": "ts-node test-server.ts",
     "format": "prettier --write src/*.ts src/**/*.ts"
