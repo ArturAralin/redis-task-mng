@@ -5,6 +5,9 @@
       <th scope="col">SeqID</th>
       <th scope="col">TaskID</th>
       <th scope="col">Name</th>
+      {{#each tasksMetadataColumns}}
+      <th scope="col">{{this.key}}</th>
+      {{/each}}
       <th scope="col">Added At</th>
       <th scope="col">Completed At</th>
       <th scope="col">Status</th>
@@ -16,6 +19,9 @@
       <th scope="row"><a href="{{this.pageUrl}}">{{this.seqId}}</a></th>
       <th><a href="{{this.pageUrl}}">{{this.taskId}}</a></th>
       <td>{{this.name}}</td>
+      {{#each this.metadata}}
+      <th scope="col">{{this}}</th>
+      {{/each}}
       <td>{{this.addedAt}}</td>
       <td>{{this.completeAt}}</td>
       <td>

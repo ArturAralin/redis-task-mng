@@ -570,4 +570,5 @@ export class TaskTracker {
   // todo: retry callback for task and subtask
   // todo: add task group id
   // todo: implement clearing old jobs
+  // todo: add subtasks metadata
 }

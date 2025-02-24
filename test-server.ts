@@ -16,6 +16,19 @@ async function main() {
   app.use(expressUiServer({
     redis,
     client,
+    metadataSettings: {
+      tasksMetadataColumns: [
+        {
+          key: 'boolField',
+        },
+        {
+          key: 'stringField',
+        },
+        {
+          key: 'numberField',
+        },
+      ]
+    }
   }))
 
   app.listen(8817);

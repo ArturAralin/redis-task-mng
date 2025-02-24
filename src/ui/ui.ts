@@ -13,15 +13,32 @@ import {
 } from './constants';
 import { prettifyUnixTs } from './utils';
 
+Handlebars.registerHelper('valOr', function(obj, key) {
+  return obj[key] || '-';
+});
+
 export interface UIOptions {
   redis: Redis;
   client: TaskTracker;
   pathPrefix?: string;
+  metadataSettings?: {
+    tasksMetadataColumns?: {
+      key: string;
+    }[];
+    // subTasksMetadataColumns?: {
+    //   key: string;
+    // }[]
+  }
 }
 
 const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
   pathPrefix: '/rtm',
+  metadataSettings: {
+    tasksMetadataColumns: [],
+    // subTasksMetadataColumns: [],
+  }
 };
+
 const STATIC_PATH = path.join(__dirname, 'static');
 const TEMPLATES_PATH = path.join(__dirname, 'templates');
 
@@ -58,10 +75,14 @@ function render(
   },
 ): string {
   const { pageTitle, ...restFields } = pageContext;
+
   return layout({
     ...commonContext,
     pageTitle,
-    body: page(restFields),
+    body: page({
+      ...commonContext,
+      ...restFields,
+    }),
   });
 }
 
@@ -76,10 +97,12 @@ export function expressUiServer(options: UIOptions): express.Router {
 
   const renderTasksPage = render.bind(null, HB_LAYOUT, HB_TASKS, {
     serverPrefix: pathPrefix,
+    ...options.metadataSettings,
   });
 
   const renderTaskPage = render.bind(null, HB_LAYOUT, HB_TASK, {
     serverPrefix: pathPrefix,
+    ...options.metadataSettings,
   });
 
   const renderPointsPage = render.bind(null, HB_LAYOUT, HB_POINTS, {
@@ -152,17 +175,33 @@ export function expressUiServer(options: UIOptions): express.Router {
     try {
       const tasks = await options.client.getTasks();
 
+      const mappedTasks = tasks.map((task) => {
+        const metadata: string[] = [];
+
+        options.metadataSettings?.tasksMetadataColumns?.forEach((col, idx) => {
+          if (typeof task.metadata?.[col.key] !== 'undefined') {
+            metadata.push(String(task.metadata[col.key]));
+          } else {
+            metadata.push('-')
+          }
+        });
+
+        return {
+          taskId: task.taskId,
+          seqId: task.seqId,
+          name: task.name || '-',
+          completeAt: task.completeAt || '-',
+          completedColor: COMPLETE_COLOR,
+          notCompletedColor: NEW_COLOR,
+          pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
+          metadata,
+        };;
+      });
+
       res.send(
         renderTasksPage({
           pageTitle: 'Tasks',
-          tasks: tasks.map(task => ({
-            ...task,
-            name: task.name || '-',
-            completeAt: task.completeAt || '-',
-            completedColor: COMPLETE_COLOR,
-            notCompletedColor: NEW_COLOR,
-            pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
-          })),
+          tasks: mappedTasks,
         }),
       );
     } catch (e) {
