@@ -101,6 +101,7 @@ export function expressUiServer(options: UIOptions): express.Router {
       });
 
       const subTasksStats = {
+        total: 0,
         failed: 0,
         completed: 0,
         inProgress: 0,
@@ -110,6 +111,8 @@ export function expressUiServer(options: UIOptions): express.Router {
       await Promise.all(
         recentTasks.map(async task => {
           const subtasks = await options.client.getSubTasks(task.taskId);
+
+          subTasksStats.total += subtasks.length;
 
           subtasks.forEach(subtask => {
             switch (subtask.state) {
