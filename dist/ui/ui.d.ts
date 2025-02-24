@@ -6,5 +6,5 @@ export interface UIOptions {
     client: TaskTracker;
     pathPrefix?: string;
 }
-export declare function expressUiServer(options: UIOptions): express.Express;
+export declare function expressUiServer(options: UIOptions): express.Router;
 //# sourceMappingURL=ui.d.ts.map

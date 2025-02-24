@@ -31,7 +31,7 @@ function render(layout, page, commonContext, pageContext) {
 }
 function expressUiServer(options) {
     const pathPrefix = options.pathPrefix || DEFAULT_PARAMS.pathPrefix;
-    const app = (0, express_1.default)();
+    const app = express_1.default.Router();
     const renderDashboardPage = render.bind(null, HB_LAYOUT, HB_DASHBOARD, {
         serverPrefix: pathPrefix,
     });
@@ -144,7 +144,6 @@ function expressUiServer(options) {
                 seqIds: [req.params.seqId],
             });
             const points = await options.client.getSubTaskPoints(task.taskId, req.params.subtaskId);
-            console.log('points', points);
             res.send(renderPointsPage({
                 pageTitle: 'Points',
                 points: points.map(point => ({
