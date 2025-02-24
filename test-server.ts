@@ -1,5 +1,6 @@
 import { expressUiServer, TaskTracker } from './src/lib';
 import { Redis } from 'ioredis';
+import express from 'express';
 
 async function main() {
   const redis = new Redis();
@@ -10,12 +11,14 @@ async function main() {
   await redis.ping();
   await client.waitReadiness();
 
-  expressUiServer({
+  const app = express();
+
+  app.use(expressUiServer({
     redis,
     client,
-  }).listen(8817, () => {
-    console.log('server started');
-  });
+  }))
+
+  app.listen(8817);
 }
 
 main();

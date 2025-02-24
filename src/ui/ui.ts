@@ -65,10 +65,10 @@ function render(
   });
 }
 
-export function expressUiServer(options: UIOptions): express.Express {
+export function expressUiServer(options: UIOptions): express.Router {
   const pathPrefix = options.pathPrefix || DEFAULT_PARAMS.pathPrefix;
 
-  const app = express();
+  const app = express.Router();
 
   const renderDashboardPage = render.bind(null, HB_LAYOUT, HB_DASHBOARD, {
     serverPrefix: pathPrefix,
@@ -209,8 +209,6 @@ export function expressUiServer(options: UIOptions): express.Express {
           task.taskId,
           req.params.subtaskId,
         );
-
-        console.log('points', points);
 
         res.send(
           renderPointsPage({
