@@ -1,14 +1,22 @@
 import type { Redis } from 'ioredis';
 
-export enum ProgressStateEnum {
+export enum SubTaskStates {
   Failed = -1,
   New = 0,
   InProgress = 1,
   Complete = 2,
 }
 
+export enum SubTaskEvents {
+  Failed = -1,
+  InProgress = 1,
+  Complete = 2,
+  Checkpoint = 3,
+}
+
 interface TaskDbState {
-  id: string;
+  taskId: string;
+  seqId: number;
   addedAt: number;
   completeAt?: number;
   subtasksCount: number;
@@ -25,7 +33,7 @@ export interface CreateSubTask {
 
 export interface SubTaskState {
   subTaskId: string;
-  state: ProgressStateEnum;
+  state: SubTaskStates;
   attempts: number;
   startedAt: number | null;
   completedAt: number | null;
@@ -33,7 +41,8 @@ export interface SubTaskState {
 }
 
 export interface TaskState {
-  id: string;
+  taskId: string;
+  seqId: number;
   name: string | null;
   addedAt: number;
   completeAt: number | null;
@@ -53,9 +62,21 @@ function dateToNumber(date: Date | number): number {
   return date;
 }
 
+interface SubTaskPointDbState {
+  event: SubTaskEvents;
+  timestamp: string;
+}
+
+interface SubTaskPoint {
+  subTaskId: string;
+  event: SubTaskEvents;
+  timestamp: number;
+}
+
 function mapTaskState(dbState: TaskDbState, remainingTasks: number): TaskState {
   return {
-    id: dbState.id,
+    seqId: dbState.seqId,
+    taskId: dbState.taskId,
     addedAt: dbState.addedAt,
     completeAt: dbState.completeAt || null,
     subtasksCount: dbState.subtasksCount,
@@ -69,6 +90,10 @@ function mapTaskState(dbState: TaskDbState, remainingTasks: number): TaskState {
 interface TaskTrackerParams {
   redis: Redis;
   prefix?: string;
+}
+
+function filterSeqIds(seqIds: (string | null)[]): string[] {
+  return seqIds.filter(Boolean) as string[];
 }
 
 export class TaskTracker {
@@ -86,6 +111,12 @@ export class TaskTracker {
 
   private subTasksRegisterPrefix: string;
 
+  private tasksCounterKey: string;
+
+  private tasksIndexKey: string;
+
+  private subTaskPointPrefix: string;
+
   private createTaskLua: string | null = null;
 
   private completeSubTaskLua: string | null = null;
@@ -101,107 +132,174 @@ export class TaskTracker {
     this.tasksRegisterKey = `${this.prefix}:register`;
     this.subTasksStateKey = `${this.prefix}:subtasks`;
     this.subTasksRegisterPrefix = `${this.prefix}:subtasks_register`;
+    this.tasksCounterKey = `${this.prefix}:tasks_counter`;
+    this.tasksIndexKey = `${this.prefix}:tasks_index`;
+    this.subTaskPointPrefix = `${this.prefix}:subtask_points`;
 
-    this.ready = this.redis.status === 'ready'
-      ? this.init()
-      : new Promise((resolve, reject) => {
-        this.redis.once('ready', async () => {
-          await this.init();
-          resolve();
-        });
+    this.ready =
+      this.redis.status === 'ready'
+        ? this.init()
+        : new Promise((resolve, reject) => {
+            this.redis.once('ready', async () => {
+              await this.init();
+              resolve();
+            });
 
-        this.redis.once('error', (err) => {
-          reject(err);
-        });
-      });
+            this.redis.once('error', err => {
+              reject(err);
+            });
+          });
   }
 
   private async init(): Promise<void> {
-    const luaCreateTask = `
-      local task_id = KEYS[1]
-      local added_at = KEYS[2]
-      local state = KEYS[3]
-      redis.call('ZADD', '${this.tasksRegisterKey}', added_at, task_id)
-      redis.call('HSET', '${this.tasksStateKey}', task_id, state)
+    const luaStoreSubTaskPoint = `
+      local seq_id = KEYS[1]
+      local subtask_id = KEYS[2]
+      local timestamp = tonumber(KEYS[3])
+      local event = KEYS[4]
 
-      redis.call('SADD', '${this.subTasksRegisterPrefix}:' .. task_id, unpack(ARGV))
-      for _, st_id in ipairs(ARGV) do
-        redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, st_id .. '${KEY_SEPARATOR}state', ${ProgressStateEnum.New})
+      local function store_event(seq_id, subtask_id, timestamp, event)
+        local key = '${this.subTaskPointPrefix}:' .. seq_id .. ':' .. subtask_id
+        local record = {}
+        record['timestamp'] = timestamp
+        record['event'] = event
+
+        redis.call('ZADD', key, timestamp, cjson.encode(record))
       end
     `;
 
+    const luaCreateTask = `
+      local seq_id = KEYS[1]
+      local task_id = KEYS[2]
+      local added_at = tonumber(KEYS[3])
+      local state = KEYS[4]
+
+      local existing_task = redis.call('HGET', '${this.tasksStateKey}', task_id)
+
+      if existing_task then
+        return -1
+      end
+
+      redis.call('ZADD', '${this.tasksRegisterKey}', added_at, seq_id)
+      redis.call('HSET', '${this.tasksStateKey}', seq_id, state)
+      redis.call('HSET', '${this.tasksIndexKey}', task_id, seq_id)
+
+      redis.call('SADD', '${this.subTasksRegisterPrefix}:' .. seq_id, unpack(ARGV))
+
+      for _, st_id in ipairs(ARGV) do
+        redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, st_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.New})
+      end
+
+      return 1
+    `;
+
     const luaCompleteSubTask = `
+      ${luaStoreSubTaskPoint}
+
       local task_id = KEYS[1]
       local subtask_id = KEYS[2]
       local completed_at = tonumber(KEYS[3])
 
-      local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state')
+      local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
+
+      local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
       -- use > or <
-      if current_state ~= '${ProgressStateEnum.InProgress}' then
+      if current_state ~= '${SubTaskStates.InProgress}' then
         error('Subtask is not in progress')
       end
 
-      redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state', ${ProgressStateEnum.Complete})
-      redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}finished_at', completed_at)
-      redis.call('SREM', '${this.subTasksRegisterPrefix}:' .. task_id, subtask_id)
+      redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.Complete})
+      redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}finished_at', completed_at)
+      redis.call('SREM', '${this.subTasksRegisterPrefix}:' .. seq_id, subtask_id)
 
-      local remaining_tasks = redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. task_id)
+      local remaining_tasks = redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. seq_id)
 
       if remaining_tasks == 0 then
-        local task_json_state = redis.call('HGET', '${this.tasksStateKey}', task_id)
+        local task_json_state = redis.call('HGET', '${this.tasksStateKey}', seq_id)
         local task_state = cjson.decode(task_json_state)
         task_state['completeAt'] = completed_at
 
-        redis.call('HSET', '${this.tasksStateKey}', task_id, cjson.encode(task_state))
+        redis.call('HSET', '${this.tasksStateKey}', seq_id, cjson.encode(task_state))
       end
+
+      store_event(seq_id, subtask_id, completed_at, ${SubTaskEvents.Complete})
 
       return remaining_tasks
     `;
 
-
     const luaSubTaskInProgress = `
+      ${luaStoreSubTaskPoint}
+
       local task_id = KEYS[1]
       local subtask_id = KEYS[2]
       local started_at = KEYS[3]
+      local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
 
-      local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state')
+      local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
-      if current_state == '${ProgressStateEnum.New}' or current_state == '${ProgressStateEnum.Failed}' then
-        redis.call('HINCRBY', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}attempts', 1)
+      if current_state == '${SubTaskStates.New}' or current_state == '${SubTaskStates.Failed}' then
+        redis.call('HINCRBY', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}attempts', 1)
       end
 
-      redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state', ${ProgressStateEnum.InProgress})
-      redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}started_at', started_at)
+      redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.InProgress})
+      redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}started_at', started_at)
+
+      store_event(seq_id, subtask_id, started_at, ${SubTaskEvents.InProgress})
     `;
 
     const luaSubTaskFailed = `
+      ${luaStoreSubTaskPoint}
+
       local task_id = KEYS[1]
       local subtask_id = KEYS[2]
       local failed_at = KEYS[3]
 
-      local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state')
+      local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
+
+      local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
       -- use > or <
-      if current_state ~= '${ProgressStateEnum.InProgress}' then
+      if current_state ~= '${SubTaskStates.InProgress}' then
         error('Subtask is not in progress')
       end
 
-      redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}state', ${ProgressStateEnum.Failed})
-      redis.call('HSET', '${this.subTasksStateKey}:' .. task_id, subtask_id .. '${KEY_SEPARATOR}failed_at', failed_at)
+      redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.Failed})
+      redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}failed_at', failed_at)
+
+      store_event(seq_id, subtask_id, failed_at, ${SubTaskEvents.Failed})
     `;
 
-    this.createTaskLua = await this.redis.script('LOAD', luaCreateTask) as string;
-    this.completeSubTaskLua = await this.redis.script('LOAD', luaCompleteSubTask) as string;
-    this.subTaskInProgressLua = await this.redis.script('LOAD', luaSubTaskInProgress) as string;
-    this.subTaskFailedLua = await this.redis.script('LOAD', luaSubTaskFailed) as string;
+    this.createTaskLua = (await this.redis.script(
+      'LOAD',
+      luaCreateTask,
+    )) as string;
+    this.completeSubTaskLua = (await this.redis.script(
+      'LOAD',
+      luaCompleteSubTask,
+    )) as string;
+    this.subTaskInProgressLua = (await this.redis.script(
+      'LOAD',
+      luaSubTaskInProgress,
+    )) as string;
+    this.subTaskFailedLua = (await this.redis.script(
+      'LOAD',
+      luaSubTaskFailed,
+    )) as string;
   }
 
-  async createTask(taskId: string, params: {
-    name?: string;
-    metadata?: Metadata;
-    subtasks: CreateSubTask[];
-  }): Promise<void> {
+  /**
+   * Create a new task. Creation is idempotent by taskId key
+   */
+  async createTask(
+    taskId: string,
+    params: {
+      name?: string;
+      metadata?: Metadata;
+      subtasks: CreateSubTask[];
+    },
+  ): Promise<{ seqId: number }> {
+    // todo: validate sub task ids /a-z0-9_-/
     if (params.subtasks.length === 0) {
       throw new Error('No subtasks');
     }
@@ -210,14 +308,19 @@ export class TaskTracker {
       throw new Error('TaskTracker not initialized');
     }
 
-    const existingTask = await this.redis.exists(`${this.tasksStateKey}:${taskId}`);
+    const existingTask = await this.redis.exists(
+      `${this.tasksStateKey}:${taskId}`,
+    );
 
     if (existingTask) {
       throw new Error(`Task with id ${taskId} already exists`);
     }
 
+    const seqId = await this.redis.incr(this.tasksCounterKey);
+
     const taskState: TaskDbState = {
-      id: taskId,
+      taskId,
+      seqId,
       addedAt: Date.now(),
       subtasksCount: params.subtasks.length,
       name: params.name,
@@ -225,53 +328,81 @@ export class TaskTracker {
       v: 1,
     };
 
-    const subtasksIds: string[] =  params.subtasks.map((subtask) => subtask.subTaskId);
+    const subtasksIds: string[] = params.subtasks.map(
+      subtask => subtask.subTaskId,
+    );
 
     await this.redis.evalsha(
       this.createTaskLua,
-      3,
+      4,
+      seqId,
       taskId,
       Date.now(),
       JSON.stringify(taskState),
       ...subtasksIds,
     );
+
+    return {
+      seqId,
+    };
   }
 
-  async getTasks(params: {
-    range?: {
-      from: Date | number;
-      to: Date | number;
-    };
-    taskIds?: string[];
-  } = {}): Promise<TaskState[]> {
+  async getTasks(
+    params: {
+      range?: {
+        from: Date | number;
+        to: Date | number;
+      };
+      seqIds?: string[];
+      taskIds?: string[];
+      pagination?: {
+        limit?: number;
+        offset?: number;
+      };
+    } = {},
+  ): Promise<TaskState[]> {
     const range = params.range || {
       from: 0,
-      to: Date.now(),
+      to: Number.MAX_SAFE_INTEGER,
     };
 
-    const taskIds = params.taskIds || await this.redis.zrevrange(
-      this.tasksRegisterKey,
-      dateToNumber(range.from),
-      dateToNumber(range.to),
-    );
+    let seqIds: string[];
 
-    if (taskIds.length === 0) {
+    if (params.seqIds) {
+      seqIds = params.seqIds;
+    } else if (params.taskIds) {
+      // todo: add debug message
+      seqIds = filterSeqIds(
+        await this.redis.hmget(this.tasksIndexKey, ...params.taskIds),
+      );
+    } else {
+      seqIds = await this.redis.zrange(
+        this.tasksRegisterKey,
+        dateToNumber(range.to),
+        dateToNumber(range.from),
+        'BYSCORE',
+        'REV',
+        'LIMIT',
+        params.pagination?.offset || 0,
+        params.pagination?.limit || Number.MAX_SAFE_INTEGER,
+      );
+    }
+
+    if (seqIds.length === 0) {
       return [];
     }
 
-    const uniqTaskIds = Array.from(new Set(taskIds));
-    const rems = Promise.all(uniqTaskIds.map((taskId) => this.redis.scard(`${this.subTasksRegisterPrefix}:${taskId}`)));
-
-    const [
-      tasks,
-      subTasksRemainingJobs,
-    ] = await Promise.all([
-      this.redis.hmget(
-        this.tasksStateKey,
-        ...uniqTaskIds
+    const uniqTaskIds = Array.from(new Set(seqIds));
+    const rems = Promise.all(
+      uniqTaskIds.map(seqId =>
+        this.redis.scard(`${this.subTasksRegisterPrefix}:${seqId}`),
       ),
-      rems
-    ])
+    );
+
+    const [tasks, subTasksRemainingJobs] = await Promise.all([
+      this.redis.hmget(this.tasksStateKey, ...uniqTaskIds),
+      rems,
+    ]);
 
     const taskStates: TaskState[] = [];
 
@@ -283,16 +414,8 @@ export class TaskTracker {
 
       const state = JSON.parse(taskState) as TaskDbState;
 
-      taskStates.push(mapTaskState(
-        state,
-        subTasksRemainingJobs[idx],
-      ))
-
-      taskStates.push(mapTaskState(
-        state,
-        subTasksRemainingJobs[idx],
-      ));
-    })
+      taskStates.push(mapTaskState(state, subTasksRemainingJobs[idx]));
+    });
 
     return taskStates;
   }
@@ -303,9 +426,11 @@ export class TaskTracker {
     return tasks[0] || null;
   }
 
-
   async getSubTasks(taskId: string): Promise<SubTaskState[]> {
-    const subtasks = await this.redis.hgetall(`${this.subTasksStateKey}:${taskId}`);
+    const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
+    const subtasks = await this.redis.hgetall(
+      `${this.subTasksStateKey}:${seqId}`,
+    );
 
     const states = new Map<string, SubTaskState>();
 
@@ -321,7 +446,7 @@ export class TaskTracker {
 
       const state = states.get(subtaskId) || {
         subTaskId: subtaskId,
-        state: ProgressStateEnum.New,
+        state: SubTaskStates.New,
         attempts: -1,
         startedAt: null,
         completedAt: null,
@@ -336,7 +461,7 @@ export class TaskTracker {
 
       switch (key) {
         case 'state':
-          state.state = parseInt(value, 10) as ProgressStateEnum;
+          state.state = parseInt(value, 10) as SubTaskStates;
           break;
         case 'started_at':
           state.startedAt = parseInt(value, 10);
@@ -356,7 +481,10 @@ export class TaskTracker {
     return Array.from(states.values());
   }
 
-  async completeSubTask(taskId: string, subTaskId: string): Promise<{ allTasksCompleted: boolean }> {
+  async completeSubTask(
+    taskId: string,
+    subTaskId: string,
+  ): Promise<{ allTasksCompleted: boolean }> {
     if (!this.completeSubTaskLua) {
       throw new Error('TaskTracker not initialized');
     }
@@ -372,8 +500,8 @@ export class TaskTracker {
     );
 
     return {
-      allTasksCompleted: remainingTasks === 0
-    }
+      allTasksCompleted: remainingTasks === 0,
+    };
   }
 
   async startSubTask(taskId: string, subTaskId: string) {
@@ -389,7 +517,7 @@ export class TaskTracker {
       taskId,
       subTaskId,
       ts,
-    )
+    );
   }
 
   async failSubTask(taskId: string, subTaskId: string) {
@@ -399,19 +527,14 @@ export class TaskTracker {
 
     const ts = new Date().getTime();
 
-    await this.redis.evalsha(
-      this.subTaskFailedLua,
-      3,
-      taskId,
-      subTaskId,
-      ts,
-    )
+    await this.redis.evalsha(this.subTaskFailedLua, 3, taskId, subTaskId, ts);
   }
 
   async isSubTaskComplete(taskId: string, subTaskId: string): Promise<boolean> {
+    const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
     const has = await this.redis.sismember(
-      `${this.subTasksRegisterPrefix}:${taskId}`,
-      subTaskId
+      `${this.subTasksRegisterPrefix}:${seqId}`,
+      subTaskId,
     );
 
     return !has;
@@ -420,4 +543,30 @@ export class TaskTracker {
   async waitReadiness(): Promise<void> {
     return this.ready;
   }
+
+  async getSubTaskPoints(
+    taskId: string,
+    subTaskId: string,
+  ): Promise<SubTaskPoint[]> {
+    const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
+    console.log('object');
+    const points = await this.redis.zrange(
+      `${this.subTaskPointPrefix}:${seqId}:${subTaskId}`,
+      0,
+      -1,
+    );
+
+    return points.map(point => {
+      const dbPoint: SubTaskPointDbState = JSON.parse(point);
+
+      return {
+        subTaskId,
+        event: dbPoint.event,
+        timestamp: parseInt(dbPoint.timestamp, 10),
+      };
+    });
+  }
+
+  // todo: retry callback for task and subtask
+  // todo: add task group id
 }

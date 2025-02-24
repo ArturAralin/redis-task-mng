@@ -1,6 +1,6 @@
-import * as uuid from 'uuid'
-import Redis from "ioredis";
-import { ProgressStateEnum, TaskTracker } from './tracker';
+import * as uuid from 'uuid';
+import Redis from 'ioredis';
+import { SubTaskEvents, SubTaskStates, TaskTracker } from './tracker';
 
 describe('TaskTracker', () => {
   let redis: Redis;
@@ -22,7 +22,7 @@ describe('TaskTracker', () => {
   test('create task', async () => {
     const taskId: string = uuid.v4();
 
-    await tracker.createTask(taskId, {
+    const { seqId } = await tracker.createTask(taskId, {
       subtasks: [
         {
           subTaskId: 't1',
@@ -31,20 +31,21 @@ describe('TaskTracker', () => {
           subTaskId: 't2',
         },
         {
-          subTaskId: 't3'
-        }
-      ]
+          subTaskId: 't3',
+        },
+      ],
     });
 
     const taskState = await tracker.getTaskState(taskId);
 
     expect(taskState).toMatchObject({
-      id: taskId,
+      taskId: taskId,
+      seqId,
       addedAt: expect.any(Number),
       subtasksCount: 3,
       subtasksRemaining: 3,
       complete: false,
-    })
+    });
   });
 
   test('complete one subtask', async () => {
@@ -59,23 +60,72 @@ describe('TaskTracker', () => {
           subTaskId: 't2',
         },
         {
-          subTaskId: 't3'
-        }
-      ]
+          subTaskId: 't3',
+        },
+      ],
     });
 
     await tracker.startSubTask(taskId, 't1');
+
+    await new Promise(resolve => {
+      setTimeout(() => {
+        resolve(null);
+      }, 10);
+    });
+
+    await tracker.failSubTask(taskId, 't1');
+
+    await new Promise(resolve => {
+      setTimeout(() => {
+        resolve(null);
+      }, 10);
+    });
+
+    await tracker.startSubTask(taskId, 't1');
+
+    await new Promise(resolve => {
+      setTimeout(() => {
+        resolve(null);
+      }, 10);
+    });
+
     await tracker.completeSubTask(taskId, 't1');
 
     const taskState = await tracker.getTaskState(taskId);
 
     expect(taskState).toMatchObject({
-      id: taskId,
+      taskId,
       addedAt: expect.any(Number),
       subtasksCount: 3,
       subtasksRemaining: 2,
       complete: false,
-    })
+    });
+
+    const points = await tracker.getSubTaskPoints(taskId, 't1');
+
+    expect(points[0]).toMatchObject({
+      subTaskId: 't1',
+      event: SubTaskEvents.InProgress,
+      timestamp: expect.any(Number),
+    });
+
+    expect(points[1]).toMatchObject({
+      subTaskId: 't1',
+      event: SubTaskEvents.Failed,
+      timestamp: expect.any(Number),
+    });
+
+    expect(points[2]).toMatchObject({
+      subTaskId: 't1',
+      event: SubTaskEvents.InProgress,
+      timestamp: expect.any(Number),
+    });
+
+    expect(points[3]).toMatchObject({
+      subTaskId: 't1',
+      event: SubTaskEvents.Complete,
+      timestamp: expect.any(Number),
+    });
   });
 
   test.skip('double complete one task task', async () => {
@@ -90,9 +140,9 @@ describe('TaskTracker', () => {
           subTaskId: 't2',
         },
         {
-          subTaskId: 't3'
-        }
-      ]
+          subTaskId: 't3',
+        },
+      ],
     });
 
     await tracker.startSubTask(taskId, 't2');
@@ -108,7 +158,7 @@ describe('TaskTracker', () => {
       subtasksCount: 3,
       subtasksRemaining: 2,
       complete: false,
-    })
+    });
   });
 
   test('get sub tasks state', async () => {
@@ -123,12 +173,12 @@ describe('TaskTracker', () => {
           subTaskId: 't2',
         },
         {
-          subTaskId: 't3'
+          subTaskId: 't3',
         },
         {
-          subTaskId: 't4'
+          subTaskId: 't4',
         },
-      ]
+      ],
     });
 
     await Promise.all([
@@ -148,7 +198,7 @@ describe('TaskTracker', () => {
     const taskState = await tracker.getTaskState(taskId);
 
     expect(taskState).toMatchObject({
-      id: taskId,
+      taskId,
       addedAt: expect.any(Number),
       completeAt: null,
       subtasksCount: 4,
@@ -162,15 +212,15 @@ describe('TaskTracker', () => {
     expect(subTasks[0]).toMatchObject({
       subTaskId: 't1',
       attempts: 1,
-      state: ProgressStateEnum.Complete,
+      state: SubTaskStates.Complete,
       startedAt: expect.any(Number),
       completedAt: expect.any(Number),
-      failedAt: null
+      failedAt: null,
     });
 
     expect(subTasks[1]).toMatchObject({
       subTaskId: 't2',
-      state: ProgressStateEnum.InProgress,
+      state: SubTaskStates.InProgress,
       startedAt: expect.any(Number),
       completedAt: null,
       failedAt: null,
@@ -179,7 +229,7 @@ describe('TaskTracker', () => {
 
     expect(subTasks[2]).toMatchObject({
       subTaskId: 't3',
-      state: ProgressStateEnum.Failed,
+      state: SubTaskStates.Failed,
       startedAt: expect.any(Number),
       completedAt: null,
       failedAt: expect.any(Number),
@@ -188,7 +238,7 @@ describe('TaskTracker', () => {
 
     expect(subTasks[3]).toMatchObject({
       subTaskId: 't4',
-      state: ProgressStateEnum.New,
+      state: SubTaskStates.New,
       startedAt: null,
       completedAt: null,
       failedAt: null,
@@ -209,9 +259,9 @@ describe('TaskTracker', () => {
           subTaskId: 't2',
         },
         {
-          subTaskId: 't3'
+          subTaskId: 't3',
         },
-      ]
+      ],
     });
 
     await tracker.startSubTask(taskId, 't1');
@@ -239,39 +289,41 @@ describe('TaskTracker', () => {
     expect(recordsWithTaskCompleteFlag.length).toBe(1);
 
     const subTasks = await tracker.getSubTasks(taskId);
-    const sortedSubTasks = subTasks.sort((a, b) => a.subTaskId.localeCompare(b.subTaskId));
+    const sortedSubTasks = subTasks.sort((a, b) =>
+      a.subTaskId.localeCompare(b.subTaskId),
+    );
 
     expect(sortedSubTasks[0]).toMatchObject({
       subTaskId: 't1',
-      state: ProgressStateEnum.Complete,
+      state: SubTaskStates.Complete,
       attempts: 1,
       startedAt: expect.any(Number),
       completedAt: expect.any(Number),
-      failedAt: null
+      failedAt: null,
     });
 
     expect(sortedSubTasks[1]).toMatchObject({
       subTaskId: 't2',
-      state: ProgressStateEnum.Complete,
+      state: SubTaskStates.Complete,
       attempts: 1,
       startedAt: expect.any(Number),
       completedAt: expect.any(Number),
-      failedAt: null
+      failedAt: null,
     });
 
     expect(sortedSubTasks[2]).toMatchObject({
       subTaskId: 't3',
-      state: ProgressStateEnum.Complete,
+      state: SubTaskStates.Complete,
       attempts: 1,
       startedAt: expect.any(Number),
       completedAt: expect.any(Number),
-      failedAt: null
+      failedAt: null,
     });
 
     const taskState = await tracker.getTaskState(taskId);
 
     expect(taskState).toMatchObject({
-      id: taskId,
+      taskId,
       addedAt: expect.any(Number),
       completeAt: expect.any(Number),
       subtasksCount: 3,
@@ -289,20 +341,18 @@ describe('TaskTracker', () => {
         stringField: 'string',
         numberField: -20,
       },
-      subtasks: [
-        { subTaskId: 'stId' }
-      ]
+      subtasks: [{ subTaskId: 'stId' }],
     });
 
     const taskState = await tracker.getTaskState(taskId);
 
     expect(taskState).toMatchObject({
-      id: taskId,
+      taskId,
       metadata: {
         boolField: false,
         stringField: 'string',
         numberField: -20,
-      }
+      },
     });
-  })
+  });
 });
