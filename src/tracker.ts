@@ -175,7 +175,7 @@ export class TaskTracker {
       local added_at = tonumber(KEYS[3])
       local state = KEYS[4]
 
-      local existing_task = redis.call('HGET', '${this.tasksStateKey}', task_id)
+      local existing_task = redis.call('HGET', '${this.tasksIndexKey}', task_id)
 
       if existing_task then
         return -1
@@ -299,7 +299,10 @@ export class TaskTracker {
       metadata?: Metadata;
       subtasks: CreateSubTask[];
     },
-  ): Promise<{ seqId: number }> {
+  ): Promise<{
+    seqId: number;
+    created: boolean;
+  }> {
     // todo: validate sub task ids /a-z0-9_-/
     if (params.subtasks.length === 0) {
       throw new Error('No subtasks');
@@ -307,14 +310,6 @@ export class TaskTracker {
 
     if (!this.createTaskLua) {
       throw new Error('TaskTracker not initialized');
-    }
-
-    const existingTask = await this.redis.exists(
-      `${this.tasksStateKey}:${taskId}`,
-    );
-
-    if (existingTask) {
-      throw new Error(`Task with id ${taskId} already exists`);
     }
 
     const seqId = await this.redis.incr(this.tasksCounterKey);
@@ -333,7 +328,7 @@ export class TaskTracker {
       subtask => subtask.subTaskId,
     );
 
-    await this.redis.evalsha(
+    const createTaskResult = await this.redis.evalsha(
       this.createTaskLua,
       4,
       seqId,
@@ -345,6 +340,7 @@ export class TaskTracker {
 
     return {
       seqId,
+      created: createTaskResult === 1,
     };
   }
 
@@ -571,4 +567,6 @@ export class TaskTracker {
   // todo: add task group id
   // todo: implement clearing old jobs
   // todo: add subtasks metadata
+  // todo: handle not found
+  // todo: patch errors
 }

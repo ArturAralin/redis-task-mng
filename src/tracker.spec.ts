@@ -48,6 +48,54 @@ describe('TaskTracker', () => {
     });
   });
 
+  test('create multiple tasks with same task id', async () => {
+    const taskId: string = uuid.v4();
+
+    const concurrentCreation = await Promise.all([
+      tracker.createTask(taskId, {
+        subtasks: [
+          {
+            subTaskId: 't1',
+          },
+        ],
+      }),
+      tracker.createTask(taskId, {
+        subtasks: [
+          {
+            subTaskId: 't1',
+          },
+        ],
+      }),
+      tracker.createTask(taskId, {
+        subtasks: [
+          {
+            subTaskId: 't1',
+          },
+        ],
+      })
+    ]);
+
+    const postCreation = await tracker.createTask(taskId, {
+      subtasks: [
+        {
+          subTaskId: 't1',
+        },
+      ],
+    });
+
+    const createdTasks = concurrentCreation.filter((t) => t.created);
+    const notCreatedTasks = concurrentCreation.filter((t) => !t.created);
+    const uniqSeqIds = new Set([
+      postCreation.seqId,
+      ...concurrentCreation.map((t) => t.seqId)
+    ]);
+
+    expect(createdTasks.length).toBe(1);
+    expect(notCreatedTasks.length).toBe(2);
+    expect(uniqSeqIds.size).toBe(4);
+    expect(postCreation.created).toBe(false);
+  })
+
   test('complete one subtask', async () => {
     const taskId: string = uuid.v4();
 
