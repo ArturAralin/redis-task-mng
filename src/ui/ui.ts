@@ -86,6 +86,10 @@ function render(
   });
 }
 
+// todo: add breadcrumbs
+// todo: add search and filters
+// todo: add retry callback
+
 export function expressUiServer(options: UIOptions): express.Router {
   const pathPrefix = options.pathPrefix || DEFAULT_PARAMS.pathPrefix;
 
@@ -197,6 +201,8 @@ export function expressUiServer(options: UIOptions): express.Router {
           addedAt: task.addedAt
             ? prettifyUnixTs(task.addedAt)
             : '-',
+          // todo: add duration
+          complete: task.complete,
           completedColor: COMPLETE_COLOR,
           notCompletedColor: NEW_COLOR,
           pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
@@ -237,6 +243,7 @@ export function expressUiServer(options: UIOptions): express.Router {
               ? prettifyUnixTs(subtask.completedAt)
               : '-',
             ...mapTaskState(subtask.state),
+            // todo: add duration
             pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
           })),
         }),

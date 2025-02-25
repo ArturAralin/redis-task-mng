@@ -569,4 +569,6 @@ export class TaskTracker {
   // todo: add subtasks metadata
   // todo: handle not found
   // todo: patch errors
+  // todo: handle NOSCRIPT No matching script - reload script
+  // todo: fix attempts count
 }
