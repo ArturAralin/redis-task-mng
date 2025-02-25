@@ -160,9 +160,10 @@ export function expressUiServer(options: UIOptions): express.Router {
         renderDashboardPage({
           pageTitle: 'Dashboard',
           subTasksStats,
-          recentTasks: recentTasks.slice(0, 5).map(task => ({
+          recentTasks: recentTasks.slice(0, 5).map((task) => ({
             name: task.name || task.taskId,
             pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
+            addedAt: prettifyUnixTs(task.addedAt),
           })),
         }),
       );
@@ -190,7 +191,12 @@ export function expressUiServer(options: UIOptions): express.Router {
           taskId: task.taskId,
           seqId: task.seqId,
           name: task.name || '-',
-          completeAt: task.completeAt || '-',
+          completeAt: task.completeAt
+            ? prettifyUnixTs(task.completeAt)
+            : '-',
+          addedAt: task.addedAt
+            ? prettifyUnixTs(task.addedAt)
+            : '-',
           completedColor: COMPLETE_COLOR,
           notCompletedColor: NEW_COLOR,
           pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
@@ -220,6 +226,7 @@ export function expressUiServer(options: UIOptions): express.Router {
       res.send(
         renderTaskPage({
           pageTitle: 'Task',
+          // todo: display whole metadata
           subtasks: subtasks.map(subtask => ({
             ...subtask,
             startedAt: subtask.startedAt

@@ -7,7 +7,7 @@
       </header>
       {{#if recentTasks.length}}
         {{#each recentTasks}}
-        <p><a href="{{this.pageUrl}}">{{name}}</a></p>
+        <p><a href="{{this.pageUrl}}">{{this.name}} - {{this.addedAt}}</a></p>
         {{/each}}
       {{else}}
         <p style="text-align: center;">No tasks for the last 24 hours</p>

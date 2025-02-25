@@ -1,7 +1,8 @@
 import { formatDate } from 'date-fns';
 
 export function prettifyUnixTs(d: number | Date): string {
-  const date = new Date(d);
+  const date = formatDate(d, 'dd/MM/yyyy HH:mm:ss')
 
-  return formatDate(date, 'MM/dd/yyyy HH:mm:ss');
+
+  return `${date} UTC`;
 }
