@@ -89,7 +89,7 @@ class TaskTracker {
       local added_at = tonumber(KEYS[3])
       local state = KEYS[4]
 
-      local existing_task = redis.call('HGET', '${this.tasksStateKey}', task_id)
+      local existing_task = redis.call('HGET', '${this.tasksIndexKey}', task_id)
 
       if existing_task then
         return -1
@@ -197,10 +197,6 @@ class TaskTracker {
         if (!this.createTaskLua) {
             throw new Error('TaskTracker not initialized');
         }
-        const existingTask = await this.redis.exists(`${this.tasksStateKey}:${taskId}`);
-        if (existingTask) {
-            throw new Error(`Task with id ${taskId} already exists`);
-        }
         const seqId = await this.redis.incr(this.tasksCounterKey);
         const taskState = {
             taskId,
@@ -212,9 +208,10 @@ class TaskTracker {
             v: 1,
         };
         const subtasksIds = params.subtasks.map(subtask => subtask.subTaskId);
-        await this.redis.evalsha(this.createTaskLua, 4, seqId, taskId, Date.now(), JSON.stringify(taskState), ...subtasksIds);
+        const createTaskResult = await this.redis.evalsha(this.createTaskLua, 4, seqId, taskId, Date.now(), JSON.stringify(taskState), ...subtasksIds);
         return {
             seqId,
+            created: createTaskResult === 1,
         };
     }
     async getTasks(params = {}) {

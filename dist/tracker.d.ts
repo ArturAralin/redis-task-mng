@@ -70,6 +70,7 @@ export declare class TaskTracker {
         subtasks: CreateSubTask[];
     }): Promise<{
         seqId: number;
+        created: boolean;
     }>;
     getTasks(params?: {
         range?: {

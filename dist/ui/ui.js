@@ -11,8 +11,15 @@ const handlebars_1 = __importDefault(require("handlebars"));
 const tracker_1 = require("../tracker");
 const constants_1 = require("./constants");
 const utils_1 = require("./utils");
+handlebars_1.default.registerHelper('valOr', function (obj, key) {
+    return obj[key] || '-';
+});
 const DEFAULT_PARAMS = {
     pathPrefix: '/rtm',
+    metadataSettings: {
+        tasksMetadataColumns: [],
+        // subTasksMetadataColumns: [],
+    }
 };
 const STATIC_PATH = path_1.default.join(__dirname, 'static');
 const TEMPLATES_PATH = path_1.default.join(__dirname, 'templates');
@@ -26,7 +33,10 @@ function render(layout, page, commonContext, pageContext) {
     return layout({
         ...commonContext,
         pageTitle,
-        body: page(restFields),
+        body: page({
+            ...commonContext,
+            ...restFields,
+        }),
     });
 }
 function expressUiServer(options) {
@@ -37,9 +47,11 @@ function expressUiServer(options) {
     });
     const renderTasksPage = render.bind(null, HB_LAYOUT, HB_TASKS, {
         serverPrefix: pathPrefix,
+        ...options.metadataSettings,
     });
     const renderTaskPage = render.bind(null, HB_LAYOUT, HB_TASK, {
         serverPrefix: pathPrefix,
+        ...options.metadataSettings,
     });
     const renderPointsPage = render.bind(null, HB_LAYOUT, HB_POINTS, {
         serverPrefix: pathPrefix,
@@ -56,6 +68,7 @@ function expressUiServer(options) {
                 },
             });
             const subTasksStats = {
+                total: 0,
                 failed: 0,
                 completed: 0,
                 inProgress: 0,
@@ -63,6 +76,7 @@ function expressUiServer(options) {
             };
             await Promise.all(recentTasks.map(async (task) => {
                 const subtasks = await options.client.getSubTasks(task.taskId);
+                subTasksStats.total += subtasks.length;
                 subtasks.forEach(subtask => {
                     switch (subtask.state) {
                         case tracker_1.SubTaskStates.Complete:
@@ -83,9 +97,10 @@ function expressUiServer(options) {
             res.send(renderDashboardPage({
                 pageTitle: 'Dashboard',
                 subTasksStats,
-                recentTasks: recentTasks.slice(0, 5).map(task => ({
+                recentTasks: recentTasks.slice(0, 5).map((task) => ({
                     name: task.name || task.taskId,
                     pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
+                    addedAt: (0, utils_1.prettifyUnixTs)(task.addedAt),
                 })),
             }));
         }
@@ -96,16 +111,38 @@ function expressUiServer(options) {
     app.get(`${pathPrefix}/tasks`, async (req, res, next) => {
         try {
             const tasks = await options.client.getTasks();
-            res.send(renderTasksPage({
-                pageTitle: 'Tasks',
-                tasks: tasks.map(task => ({
-                    ...task,
+            const mappedTasks = tasks.map((task) => {
+                var _a, _b;
+                const metadata = [];
+                (_b = (_a = options.metadataSettings) === null || _a === void 0 ? void 0 : _a.tasksMetadataColumns) === null || _b === void 0 ? void 0 : _b.forEach((col, idx) => {
+                    var _a;
+                    if (typeof ((_a = task.metadata) === null || _a === void 0 ? void 0 : _a[col.key]) !== 'undefined') {
+                        metadata.push(String(task.metadata[col.key]));
+                    }
+                    else {
+                        metadata.push('-');
+                    }
+                });
+                return {
+                    taskId: task.taskId,
+                    seqId: task.seqId,
                     name: task.name || '-',
-                    completeAt: task.completeAt || '-',
+                    completeAt: task.completeAt
+                        ? (0, utils_1.prettifyUnixTs)(task.completeAt)
+                        : '-',
+                    addedAt: task.addedAt
+                        ? (0, utils_1.prettifyUnixTs)(task.addedAt)
+                        : '-',
                     completedColor: constants_1.COMPLETE_COLOR,
                     notCompletedColor: constants_1.NEW_COLOR,
                     pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
-                })),
+                    metadata,
+                };
+                ;
+            });
+            res.send(renderTasksPage({
+                pageTitle: 'Tasks',
+                tasks: mappedTasks,
             }));
         }
         catch (e) {
@@ -120,6 +157,7 @@ function expressUiServer(options) {
             const subtasks = await options.client.getSubTasks(task.taskId);
             res.send(renderTaskPage({
                 pageTitle: 'Task',
+                // todo: display whole metadata
                 subtasks: subtasks.map(subtask => ({
                     ...subtask,
                     startedAt: subtask.startedAt

@@ -5,6 +5,11 @@ export interface UIOptions {
     redis: Redis;
     client: TaskTracker;
     pathPrefix?: string;
+    metadataSettings?: {
+        tasksMetadataColumns?: {
+            key: string;
+        }[];
+    };
 }
 export declare function expressUiServer(options: UIOptions): express.Router;
 //# sourceMappingURL=ui.d.ts.map
