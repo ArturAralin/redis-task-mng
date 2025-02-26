@@ -9,7 +9,7 @@
   "scripts": {
     "non-ts-to-dist": "cp -R src/ui/static dist/ui/static && cp -R src/ui/templates dist/ui/templates",
     "build": "rm -Rf dist && tsc && yarn non-ts-to-dist",
-    "test": "jest ./src/**.spec.ts",
+    "test": "jest",
     "start-server": "ts-node test-server.ts",
     "format": "prettier --write src/*.ts src/**/*.ts"
   },
