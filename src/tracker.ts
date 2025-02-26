@@ -1,4 +1,4 @@
-import type { Redis } from 'ioredis';
+import { ReplyError, type Redis } from 'ioredis';
 
 export enum SubTaskStates {
   Failed = -1,
@@ -29,7 +29,9 @@ interface TaskDbState {
 type Metadata = Record<string, string | number | boolean>;
 
 export interface CreateSubTask {
+  name?: string;
   subTaskId: string;
+  metadata?: Metadata;
 }
 
 export interface SubTaskState {
@@ -39,6 +41,8 @@ export interface SubTaskState {
   startedAt: number | null;
   completedAt: number | null;
   failedAt: number | null;
+  name: string | null;
+  metadata: Metadata | null;
 }
 
 export interface TaskState {
@@ -203,6 +207,10 @@ export class TaskTracker {
 
       local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
 
+      if not seq_id then
+        return 't_not_found'
+      end
+
       local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
       -- use > or <
@@ -237,6 +245,10 @@ export class TaskTracker {
       local started_at = KEYS[3]
       local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
 
+      if not seq_id then
+        return 't_not_found'
+      end
+
       local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
       if current_state == '${SubTaskStates.New}' or current_state == '${SubTaskStates.Failed}' then
@@ -257,6 +269,10 @@ export class TaskTracker {
       local failed_at = KEYS[3]
 
       local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
+
+      if not seq_id then
+        return 't_not_found'
+      end
 
       local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
@@ -289,6 +305,39 @@ export class TaskTracker {
     )) as string;
   }
 
+  private async redisEvalScript(
+    sha: string | null,
+    keysCount: number,
+    ...args: (string | number)[]
+  ): Promise<unknown> {
+    if (!sha) {
+      throw new Error('Client is not initialized');
+    }
+
+    try {
+      return await this.redis.evalsha(
+        sha,
+        keysCount,
+        ...args,
+      );
+    } catch (error) {
+      if (error instanceof ReplyError) {
+        if ((error as Record<string, string>).message.startsWith('NOSCRIPT')) {
+          // re init lib and retry
+          await this.init();
+
+          return await this.redis.evalsha(
+            sha,
+            keysCount,
+            ...args,
+          );
+        }
+      }
+
+      throw error;
+    }
+  }
+
   /**
    * Create a new task. Creation is idempotent by taskId key
    */
@@ -308,10 +357,6 @@ export class TaskTracker {
       throw new Error('No subtasks');
     }
 
-    if (!this.createTaskLua) {
-      throw new Error('TaskTracker not initialized');
-    }
-
     const seqId = await this.redis.incr(this.tasksCounterKey);
 
     const taskState: TaskDbState = {
@@ -324,19 +369,40 @@ export class TaskTracker {
       v: 1,
     };
 
-    const subtasksIds: string[] = params.subtasks.map(
-      subtask => subtask.subTaskId,
-    );
+    const subtasksIds: string[] = [];
+    const restSubtaskFields: (string | number)[] = [];
 
-    const createTaskResult = await this.redis.evalsha(
+    params.subtasks.forEach((subtask) => {
+      subtasksIds.push(subtask.subTaskId);
+
+      if (subtask.name) {
+        restSubtaskFields.push(`${subtask.subTaskId}${KEY_SEPARATOR}name`);
+        restSubtaskFields.push(subtask.name);
+      }
+
+      if (subtask.metadata) {
+        restSubtaskFields.push(`${subtask.subTaskId}${KEY_SEPARATOR}metadata`);
+        restSubtaskFields.push(JSON.stringify(subtask.metadata));
+      }
+    });
+
+    const createTaskResult = await this.redisEvalScript(
       this.createTaskLua,
       4,
       seqId,
       taskId,
       Date.now(),
       JSON.stringify(taskState),
-      ...subtasksIds,
+      ...subtasksIds
     );
+
+    // Add rest subtask fields
+    if (restSubtaskFields.length > 0) {
+      await this.redis.hmset(
+        `${this.subTasksStateKey}:${seqId}`,
+        ...restSubtaskFields,
+      );
+    }
 
     return {
       seqId,
@@ -423,7 +489,9 @@ export class TaskTracker {
     return tasks[0] || null;
   }
 
-  async getSubTasks(taskId: string): Promise<SubTaskState[]> {
+  async getSubTasks(taskId: string, params?: {
+    subtaskIds?: string[];
+  }): Promise<SubTaskState[]> {
     const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
     const subtasks = await this.redis.hgetall(
       `${this.subTasksStateKey}:${seqId}`,
@@ -432,14 +500,20 @@ export class TaskTracker {
     const states = new Map<string, SubTaskState>();
 
     Object.entries(subtasks).forEach(([redisKey, value]) => {
-      const idx = redisKey.indexOf(KEY_SEPARATOR);
+      const separatorIdx = redisKey.indexOf(KEY_SEPARATOR);
 
-      if (idx === -1) {
+      if (separatorIdx === -1) {
         throw new Error(`Invalid key "${redisKey}"`);
       }
 
-      const subtaskId = redisKey.slice(0, idx);
-      const key = redisKey.slice(idx + 3);
+      const subtaskId = redisKey.slice(0, separatorIdx);
+
+      // can be optimized by using hmget instead of hgetall
+      if (params?.subtaskIds && !params.subtaskIds.includes(subtaskId)) {
+        return;
+      }
+
+      const key = redisKey.slice(separatorIdx + 3);
 
       const state = states.get(subtaskId) || {
         subTaskId: subtaskId,
@@ -448,6 +522,8 @@ export class TaskTracker {
         startedAt: null,
         completedAt: null,
         failedAt: null,
+        name: null,
+        metadata: null,
       };
 
       // trick to prevent multiple Map.set calls
@@ -472,6 +548,12 @@ export class TaskTracker {
         case 'attempts':
           state.attempts = parseInt(value, 10);
           break;
+        case 'name':
+          state.name = value;
+          break;
+        case 'metadata':
+          state.metadata = JSON.parse(value);
+          break;
       }
     });
 
@@ -482,13 +564,9 @@ export class TaskTracker {
     taskId: string,
     subTaskId: string,
   ): Promise<{ allTasksCompleted: boolean }> {
-    if (!this.completeSubTaskLua) {
-      throw new Error('TaskTracker not initialized');
-    }
-
     const ts = new Date().getTime();
 
-    const remainingTasks = await this.redis.evalsha(
+    const remainingTasks = await this.redisEvalScript(
       this.completeSubTaskLua,
       3,
       taskId,
@@ -502,13 +580,9 @@ export class TaskTracker {
   }
 
   async startSubTask(taskId: string, subTaskId: string) {
-    if (!this.subTaskInProgressLua) {
-      throw new Error('TaskTracker not initialized');
-    }
-
     const ts = new Date().getTime();
 
-    await this.redis.evalsha(
+    await this.redisEvalScript(
       this.subTaskInProgressLua,
       3,
       taskId,
@@ -518,13 +592,15 @@ export class TaskTracker {
   }
 
   async failSubTask(taskId: string, subTaskId: string) {
-    if (!this.subTaskFailedLua) {
-      throw new Error('TaskTracker not initialized');
-    }
-
     const ts = new Date().getTime();
 
-    await this.redis.evalsha(this.subTaskFailedLua, 3, taskId, subTaskId, ts);
+    await this.redisEvalScript(
+      this.subTaskFailedLua,
+      3,
+      taskId,
+      subTaskId,
+      ts
+    );
   }
 
   async isSubTaskComplete(taskId: string, subTaskId: string): Promise<boolean> {
@@ -566,9 +642,7 @@ export class TaskTracker {
   // todo: retry callback for task and subtask
   // todo: add task group id
   // todo: implement clearing old jobs
-  // todo: add subtasks metadata
   // todo: handle not found
   // todo: patch errors
-  // todo: handle NOSCRIPT No matching script - reload script
   // todo: fix attempts count
 }

@@ -213,12 +213,19 @@ describe('TaskTracker', () => {
     const taskId: string = uuid.v4();
 
     await tracker.createTask(taskId, {
+      name: 'Sub tasks state',
       subtasks: [
         {
           subTaskId: 't1',
+          name: 'Sub task name'
         },
         {
           subTaskId: 't2',
+          metadata: {
+            foo: 'bar',
+            bool: false,
+            num: -1,
+          }
         },
         {
           subTaskId: 't3',
@@ -252,7 +259,7 @@ describe('TaskTracker', () => {
       subtasksCount: 4,
       subtasksRemaining: 3,
       complete: false,
-      name: null,
+      name: 'Sub tasks state',
     });
 
     const subTasks = await tracker.getSubTasks(taskId);
@@ -264,6 +271,7 @@ describe('TaskTracker', () => {
       startedAt: expect.any(Number),
       completedAt: expect.any(Number),
       failedAt: null,
+      name: 'Sub task name'
     });
 
     expect(subTasks[1]).toMatchObject({
@@ -273,6 +281,11 @@ describe('TaskTracker', () => {
       completedAt: null,
       failedAt: null,
       attempts: 1,
+      metadata: {
+        foo: 'bar',
+        bool: false,
+        num: -1,
+      }
     });
 
     expect(subTasks[2]).toMatchObject({
@@ -402,5 +415,12 @@ describe('TaskTracker', () => {
         numberField: -20,
       },
     });
+  });
+
+  test('complete non existing subtask', async () => {
+    await tracker.completeSubTask('taskId', 'subTaskId');
+    await tracker.failSubTask('taskId', 'subTaskId');
+    await tracker.startSubTask('taskId', 'subTaskId');
+    await tracker.isSubTaskComplete('taskId', 'subTaskId');
   });
 });

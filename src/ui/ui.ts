@@ -61,8 +61,8 @@ const HB_TASK = Handlebars.compile(
   fs.readFileSync(path.join(TEMPLATES_PATH, 'task.handlebars'), 'utf-8'),
 );
 
-const HB_POINTS = Handlebars.compile(
-  fs.readFileSync(path.join(TEMPLATES_PATH, 'points.handlebars'), 'utf-8'),
+const HB_SUBTASK = Handlebars.compile(
+  fs.readFileSync(path.join(TEMPLATES_PATH, 'subtask.handlebars'), 'utf-8'),
 );
 
 function render(
@@ -109,7 +109,7 @@ export function expressUiServer(options: UIOptions): express.Router {
     ...options.metadataSettings,
   });
 
-  const renderPointsPage = render.bind(null, HB_LAYOUT, HB_POINTS, {
+  const renderSubTaskPointsPage = render.bind(null, HB_LAYOUT, HB_SUBTASK, {
     serverPrefix: pathPrefix,
   });
 
@@ -261,10 +261,18 @@ export function expressUiServer(options: UIOptions): express.Router {
           seqIds: [req.params.seqId],
         });
 
-        const points = await options.client.getSubTaskPoints(
-          task.taskId,
-          req.params.subtaskId,
-        );
+        const [
+          points,
+          [subtask]
+        ] = await Promise.all([
+          options.client.getSubTaskPoints(
+            task.taskId,
+            req.params.subtaskId,
+          ),
+          options.client.getSubTasks(task.taskId, {
+            subtaskIds: [req.params.subtaskId],
+          }),
+        ]);
 
         const extendedPoints = [
           {
@@ -276,8 +284,15 @@ export function expressUiServer(options: UIOptions): express.Router {
         ];
 
         res.send(
-          renderPointsPage({
-            pageTitle: 'Points',
+          renderSubTaskPointsPage({
+            pageTitle: 'Subtask',
+            subtask: {
+              ...subtask,
+              metadata: Object.entries(subtask.metadata || {}).map(([key, value]) => ({
+                key,
+                value,
+              }))
+            },
             points: extendedPoints.map(point => ({
               ...point,
               timestamp: prettifyUnixTs(point.timestamp),
