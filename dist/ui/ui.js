@@ -27,7 +27,7 @@ const HB_LAYOUT = handlebars_1.default.compile(fs_1.default.readFileSync(path_1.
 const HB_DASHBOARD = handlebars_1.default.compile(fs_1.default.readFileSync(path_1.default.join(TEMPLATES_PATH, 'dashboard.handlebars'), 'utf-8'));
 const HB_TASKS = handlebars_1.default.compile(fs_1.default.readFileSync(path_1.default.join(TEMPLATES_PATH, 'tasks.handlebars'), 'utf-8'));
 const HB_TASK = handlebars_1.default.compile(fs_1.default.readFileSync(path_1.default.join(TEMPLATES_PATH, 'task.handlebars'), 'utf-8'));
-const HB_POINTS = handlebars_1.default.compile(fs_1.default.readFileSync(path_1.default.join(TEMPLATES_PATH, 'points.handlebars'), 'utf-8'));
+const HB_SUBTASK = handlebars_1.default.compile(fs_1.default.readFileSync(path_1.default.join(TEMPLATES_PATH, 'subtask.handlebars'), 'utf-8'));
 function render(layout, page, commonContext, pageContext) {
     const { pageTitle, ...restFields } = pageContext;
     return layout({
@@ -39,6 +39,9 @@ function render(layout, page, commonContext, pageContext) {
         }),
     });
 }
+// todo: add breadcrumbs
+// todo: add search and filters
+// todo: add retry callback
 function expressUiServer(options) {
     const pathPrefix = options.pathPrefix || DEFAULT_PARAMS.pathPrefix;
     const app = express_1.default.Router();
@@ -53,7 +56,7 @@ function expressUiServer(options) {
         serverPrefix: pathPrefix,
         ...options.metadataSettings,
     });
-    const renderPointsPage = render.bind(null, HB_LAYOUT, HB_POINTS, {
+    const renderSubTaskPointsPage = render.bind(null, HB_LAYOUT, HB_SUBTASK, {
         serverPrefix: pathPrefix,
     });
     app.use(`${pathPrefix}/static`, express_1.default.static(STATIC_PATH));
@@ -133,6 +136,8 @@ function expressUiServer(options) {
                     addedAt: task.addedAt
                         ? (0, utils_1.prettifyUnixTs)(task.addedAt)
                         : '-',
+                    // todo: add duration
+                    complete: task.complete,
                     completedColor: constants_1.COMPLETE_COLOR,
                     notCompletedColor: constants_1.NEW_COLOR,
                     pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
@@ -168,6 +173,7 @@ function expressUiServer(options) {
                         ? (0, utils_1.prettifyUnixTs)(subtask.completedAt)
                         : '-',
                     ...mapTaskState(subtask.state),
+                    // todo: add duration
                     pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
                 })),
             }));
@@ -181,7 +187,12 @@ function expressUiServer(options) {
             const [task] = await options.client.getTasks({
                 seqIds: [req.params.seqId],
             });
-            const points = await options.client.getSubTaskPoints(task.taskId, req.params.subtaskId);
+            const [points, [subtask]] = await Promise.all([
+                options.client.getSubTaskPoints(task.taskId, req.params.subtaskId),
+                options.client.getSubTasks(task.taskId, {
+                    subtaskIds: [req.params.subtaskId],
+                }),
+            ]);
             const extendedPoints = [
                 {
                     subTaskId: req.params.subtaskId,
@@ -190,8 +201,15 @@ function expressUiServer(options) {
                 },
                 ...points,
             ];
-            res.send(renderPointsPage({
-                pageTitle: 'Points',
+            res.send(renderSubTaskPointsPage({
+                pageTitle: 'Subtask',
+                subtask: {
+                    ...subtask,
+                    metadata: Object.entries(subtask.metadata || {}).map(([key, value]) => ({
+                        key,
+                        value,
+                    }))
+                },
                 points: extendedPoints.map(point => ({
                     ...point,
                     timestamp: (0, utils_1.prettifyUnixTs)(point.timestamp),

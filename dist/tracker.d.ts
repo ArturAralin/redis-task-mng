@@ -1,4 +1,4 @@
-import type { Redis } from 'ioredis';
+import { type Redis } from 'ioredis';
 export declare enum SubTaskStates {
     Failed = -1,
     New = 0,
@@ -14,7 +14,9 @@ export declare enum SubTaskEvents {
 }
 type Metadata = Record<string, string | number | boolean>;
 export interface CreateSubTask {
+    name?: string;
     subTaskId: string;
+    metadata?: Metadata;
 }
 export interface SubTaskState {
     subTaskId: string;
@@ -23,6 +25,8 @@ export interface SubTaskState {
     startedAt: number | null;
     completedAt: number | null;
     failedAt: number | null;
+    name: string | null;
+    metadata: Metadata | null;
 }
 export interface TaskState {
     taskId: string;
@@ -61,6 +65,7 @@ export declare class TaskTracker {
     private subTaskFailedLua;
     constructor(params: TaskTrackerParams);
     private init;
+    private redisEvalScript;
     /**
      * Create a new task. Creation is idempotent by taskId key
      */
@@ -85,7 +90,9 @@ export declare class TaskTracker {
         };
     }): Promise<TaskState[]>;
     getTaskState(taskId: string): Promise<TaskState | null>;
-    getSubTasks(taskId: string): Promise<SubTaskState[]>;
+    getSubTasks(taskId: string, params?: {
+        subtaskIds?: string[];
+    }): Promise<SubTaskState[]>;
     completeSubTask(taskId: string, subTaskId: string): Promise<{
         allTasksCompleted: boolean;
     }>;
