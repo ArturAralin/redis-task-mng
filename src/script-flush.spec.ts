@@ -22,17 +22,21 @@ describe('TaskTracker', () => {
   test('create task', async () => {
     const taskId: string = uuid.v4();
     await tracker.createTask(taskId, {
-      subtasks: [{
-        subTaskId: '123',
-      }]
+      subtasks: [
+        {
+          subTaskId: '123',
+        },
+      ],
     });
 
     await redis.script('FLUSH');
 
     await tracker.createTask(taskId, {
-      subtasks: [{
-        subTaskId: '123',
-      }]
+      subtasks: [
+        {
+          subTaskId: '123',
+        },
+      ],
     });
   });
 });

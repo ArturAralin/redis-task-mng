@@ -1,10 +1,13 @@
-<h2>Task</h2>
+<h2>Task: {{task.name}}</h2>
+{{!-- <small>Task ID: {{task.taskId}}</small> --}}
+<h3>Subtasks</h3>
 <table>
   <thead>
     <tr>
-      <th scope="col">ID</th>
+      <th scope="col">Name</th>
       <th scope="col">State</th>
-      <th scope="col">Attempts count  </th>
+      <th scope="col">Attempts count</th>
+      <th scope="col">Duration</th>
       <th scope="col">Started At</th>
       <th scope="col">Completed At</th>
       <th scope="col">Failed At</th>
@@ -13,9 +16,10 @@
   <tbody>
     {{#each subtasks}}
     <tr>
-      <th scope="row"><a href="{{this.pageUrl}}">{{this.subTaskId}}</a></th>
+      <th scope="row"><a href="{{this.pageUrl}}">{{this.name}}</a></th>
       <th><kbd style="background-color: {{this.stateColor}};">{{this.state}}</kbd></th>
       <td>{{this.attempts}}</td>
+      <td>{{this.duration}}</td>
       <td>{{this.startedAt}}</td>
       <td>{{this.completedAt}}</td>
       <td>{{this.failedAt}}</td>

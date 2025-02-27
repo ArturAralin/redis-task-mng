@@ -13,6 +13,18 @@
         <p style="text-align: center;">No tasks for the last 24 hours</p>
       {{/if}}
     </article>
+    <article>
+      <header>
+        Recent tasks for the last 24 hours
+      </header>
+      {{#if longestSubtasks.length}}
+        {{#each longestSubtasks}}
+        <p><a href="{{this.pageUrl}}">{{this.name}} ({{this.duration}})</a></p>
+        {{/each}}
+      {{else}}
+        <p style="text-align: center;">No tasks for the last 24 hours</p>
+      {{/if}}
+    </article>
   </div>
   <div>
     <article>

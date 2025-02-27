@@ -2,9 +2,7 @@
 <table>
   <thead>
     <tr>
-      <th scope="col">SeqID</th>
-      <th scope="col">TaskID</th>
-      <th scope="col">Name</th>
+      <th>Name</th>
       {{#each tasksMetadataColumns}}
       <th scope="col">{{this.key}}</th>
       {{/each}}
@@ -14,11 +12,24 @@
     </tr>
   </thead>
   <tbody>
+    {{!-- <tr>
+      <th scope="row"></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th>
+        <select>
+          <option>All</option>
+          <option>Waiting</option>
+          <option>Completed</option>
+        </select>
+      </th>
+    </tr> --}}
     {{#each tasks}}
     <tr>
-      <th scope="row"><a href="{{this.pageUrl}}">{{this.seqId}}</a></th>
-      <th><a href="{{this.pageUrl}}">{{this.taskId}}</a></th>
-      <td>{{this.name}}</td>
+      <th scope="row"><a href="{{this.pageUrl}}">{{this.name}}</a></th>
       {{#each this.metadata}}
       <th scope="col">{{this}}</th>
       {{/each}}

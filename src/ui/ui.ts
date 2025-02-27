@@ -4,7 +4,12 @@ import path from 'path';
 import fs from 'fs';
 import { TaskTracker } from '../lib';
 import Handlebars from 'handlebars';
-import { SubTaskEvents, SubTaskStates } from '../tracker';
+import {
+  SubTaskEvents,
+  SubTaskState,
+  SubTaskStates,
+  TaskState,
+} from '../tracker';
 import {
   COMPLETE_COLOR,
   FAIL_COLOR,
@@ -12,10 +17,6 @@ import {
   NEW_COLOR,
 } from './constants';
 import { prettifyUnixTs } from './utils';
-
-Handlebars.registerHelper('valOr', function(obj, key) {
-  return obj[key] || '-';
-});
 
 export interface UIOptions {
   redis: Redis;
@@ -28,7 +29,7 @@ export interface UIOptions {
     // subTasksMetadataColumns?: {
     //   key: string;
     // }[]
-  }
+  };
 }
 
 const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
@@ -36,7 +37,7 @@ const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
   metadataSettings: {
     tasksMetadataColumns: [],
     // subTasksMetadataColumns: [],
-  }
+  },
 };
 
 const STATIC_PATH = path.join(__dirname, 'static');
@@ -84,6 +85,24 @@ function render(
       ...restFields,
     }),
   });
+}
+
+function getTaskName(task: TaskState): string {
+  return task.name || task.taskId;
+}
+
+function getSubTaskName(subTask: SubTaskState): string {
+  return subTask.name || subTask.subTaskId;
+}
+
+function getSubTaskDuration(subTask: SubTaskState): number | null {
+  const endedAt = subTask.completedAt || subTask.failedAt;
+
+  if (endedAt && subTask.startedAt) {
+    return endedAt - subTask.startedAt;
+  }
+
+  return null;
 }
 
 // todo: add breadcrumbs
@@ -135,13 +154,21 @@ export function expressUiServer(options: UIOptions): express.Router {
         new: 0,
       };
 
+      const subTasksWithDuration: [TaskState, SubTaskState][] = [];
+
       await Promise.all(
-        recentTasks.map(async task => {
+        recentTasks.map(async (task) => {
           const subtasks = await options.client.getSubTasks(task.taskId);
 
           subTasksStats.total += subtasks.length;
 
-          subtasks.forEach(subtask => {
+          subtasks.forEach((subtask) => {
+            const duration = getSubTaskDuration(subtask);
+
+            if (duration !== null) {
+              subTasksWithDuration.push([task, subtask]);
+            }
+
             switch (subtask.state) {
               case SubTaskStates.Complete:
                 subTasksStats.completed++;
@@ -164,6 +191,18 @@ export function expressUiServer(options: UIOptions): express.Router {
         renderDashboardPage({
           pageTitle: 'Dashboard',
           subTasksStats,
+          longestSubtasks: subTasksWithDuration
+            .sort(([, a], [, b]) => {
+              return (
+                (getSubTaskDuration(b) || 0) - (getSubTaskDuration(a) || 0)
+              );
+            })
+            .slice(0, 5)
+            .map(([task, subtask]) => ({
+              name: `${getTaskName(task)} - ${getSubTaskName(subtask)}`,
+              pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
+              duration: `${getSubTaskDuration(subtask)} ms`,
+            })),
           recentTasks: recentTasks.slice(0, 5).map((task) => ({
             name: task.name || task.taskId,
             pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
@@ -183,31 +222,27 @@ export function expressUiServer(options: UIOptions): express.Router {
       const mappedTasks = tasks.map((task) => {
         const metadata: string[] = [];
 
-        options.metadataSettings?.tasksMetadataColumns?.forEach((col, idx) => {
+        options.metadataSettings?.tasksMetadataColumns?.forEach((col) => {
           if (typeof task.metadata?.[col.key] !== 'undefined') {
             metadata.push(String(task.metadata[col.key]));
           } else {
-            metadata.push('-')
+            metadata.push('-');
           }
         });
 
         return {
           taskId: task.taskId,
           seqId: task.seqId,
-          name: task.name || '-',
-          completeAt: task.completeAt
-            ? prettifyUnixTs(task.completeAt)
-            : '-',
-          addedAt: task.addedAt
-            ? prettifyUnixTs(task.addedAt)
-            : '-',
+          name: getTaskName(task),
+          completeAt: task.completeAt ? prettifyUnixTs(task.completeAt) : '-',
+          addedAt: task.addedAt ? prettifyUnixTs(task.addedAt) : '-',
           // todo: add duration
           complete: task.complete,
           completedColor: COMPLETE_COLOR,
           notCompletedColor: NEW_COLOR,
           pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
           metadata,
-        };;
+        };
       });
 
       res.send(
@@ -232,9 +267,14 @@ export function expressUiServer(options: UIOptions): express.Router {
       res.send(
         renderTaskPage({
           pageTitle: 'Task',
+          task: {
+            ...task,
+            name: getTaskName(task),
+          },
           // todo: display whole metadata
-          subtasks: subtasks.map(subtask => ({
+          subtasks: subtasks.map((subtask) => ({
             ...subtask,
+            name: getSubTaskName(subtask),
             startedAt: subtask.startedAt
               ? prettifyUnixTs(subtask.startedAt)
               : '-',
@@ -243,7 +283,7 @@ export function expressUiServer(options: UIOptions): express.Router {
               ? prettifyUnixTs(subtask.completedAt)
               : '-',
             ...mapTaskState(subtask.state),
-            // todo: add duration
+            duration: getSubTaskDuration(subtask) || '-',
             pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
           })),
         }),
@@ -261,14 +301,8 @@ export function expressUiServer(options: UIOptions): express.Router {
           seqIds: [req.params.seqId],
         });
 
-        const [
-          points,
-          [subtask]
-        ] = await Promise.all([
-          options.client.getSubTaskPoints(
-            task.taskId,
-            req.params.subtaskId,
-          ),
+        const [points, [subtask]] = await Promise.all([
+          options.client.getSubTaskPoints(task.taskId, req.params.subtaskId),
           options.client.getSubTasks(task.taskId, {
             subtaskIds: [req.params.subtaskId],
           }),
@@ -288,12 +322,14 @@ export function expressUiServer(options: UIOptions): express.Router {
             pageTitle: 'Subtask',
             subtask: {
               ...subtask,
-              metadata: Object.entries(subtask.metadata || {}).map(([key, value]) => ({
-                key,
-                value,
-              }))
+              metadata: Object.entries(subtask.metadata || {}).map(
+                ([key, value]) => ({
+                  key,
+                  value,
+                }),
+              ),
             },
-            points: extendedPoints.map(point => ({
+            points: extendedPoints.map((point) => ({
               ...point,
               timestamp: prettifyUnixTs(point.timestamp),
               ...mapPointEvent(point.event),
@@ -342,7 +378,7 @@ function mapPointEvent(event: SubTaskEvents): {
       return {
         event: 'Added',
         eventColor: NEW_COLOR,
-      }
+      };
     default:
       return {
         event,

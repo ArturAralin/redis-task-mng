@@ -1,3 +1,6 @@
+# !!! PACKAGE WILL BE RENAMED !!! DO NOT USE IT NOW
+
+# Redis task mng
 ```javascript
 async function publisher() {
   const plannedJobs = generateJobs(); // { uniqFileName: string, ... }[];

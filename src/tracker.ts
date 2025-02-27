@@ -101,6 +101,12 @@ function filterSeqIds(seqIds: (string | null)[]): string[] {
   return seqIds.filter(Boolean) as string[];
 }
 
+function patchError(error: unknown, prefix: string): void {
+  if (error instanceof Error) {
+    error.message = `${prefix}: ${error.message}`;
+  }
+}
+
 export class TaskTracker {
   private redis: Redis;
 
@@ -145,12 +151,11 @@ export class TaskTracker {
       this.redis.status === 'ready'
         ? this.init()
         : new Promise((resolve, reject) => {
-            this.redis.once('ready', async () => {
-              await this.init();
-              resolve();
+            this.redis.once('ready', () => {
+              this.init().then(resolve).catch(reject);
             });
 
-            this.redis.once('error', err => {
+            this.redis.once('error', (err) => {
               reject(err);
             });
           });
@@ -315,22 +320,14 @@ export class TaskTracker {
     }
 
     try {
-      return await this.redis.evalsha(
-        sha,
-        keysCount,
-        ...args,
-      );
+      return await this.redis.evalsha(sha, keysCount, ...args);
     } catch (error) {
       if (error instanceof ReplyError) {
         if ((error as Record<string, string>).message.startsWith('NOSCRIPT')) {
           // re init lib and retry
           await this.init();
 
-          return await this.redis.evalsha(
-            sha,
-            keysCount,
-            ...args,
-          );
+          return await this.redis.evalsha(sha, keysCount, ...args);
         }
       }
 
@@ -357,57 +354,65 @@ export class TaskTracker {
       throw new Error('No subtasks');
     }
 
-    const seqId = await this.redis.incr(this.tasksCounterKey);
+    try {
+      const seqId = await this.redis.incr(this.tasksCounterKey);
 
-    const taskState: TaskDbState = {
-      taskId,
-      seqId,
-      addedAt: Date.now(),
-      subtasksCount: params.subtasks.length,
-      name: params.name,
-      metadata: params.metadata,
-      v: 1,
-    };
+      const taskState: TaskDbState = {
+        taskId,
+        seqId,
+        addedAt: Date.now(),
+        subtasksCount: params.subtasks.length,
+        name: params.name,
+        metadata: params.metadata,
+        v: 1,
+      };
 
-    const subtasksIds: string[] = [];
-    const restSubtaskFields: (string | number)[] = [];
+      const subtasksIds: string[] = [];
+      const restSubtaskFields: (string | number)[] = [];
 
-    params.subtasks.forEach((subtask) => {
-      subtasksIds.push(subtask.subTaskId);
+      params.subtasks.forEach((subtask) => {
+        subtasksIds.push(subtask.subTaskId);
 
-      if (subtask.name) {
-        restSubtaskFields.push(`${subtask.subTaskId}${KEY_SEPARATOR}name`);
-        restSubtaskFields.push(subtask.name);
-      }
+        if (subtask.name) {
+          restSubtaskFields.push(`${subtask.subTaskId}${KEY_SEPARATOR}name`);
+          restSubtaskFields.push(subtask.name);
+        }
 
-      if (subtask.metadata) {
-        restSubtaskFields.push(`${subtask.subTaskId}${KEY_SEPARATOR}metadata`);
-        restSubtaskFields.push(JSON.stringify(subtask.metadata));
-      }
-    });
+        if (subtask.metadata) {
+          restSubtaskFields.push(
+            `${subtask.subTaskId}${KEY_SEPARATOR}metadata`,
+          );
+          restSubtaskFields.push(JSON.stringify(subtask.metadata));
+        }
+      });
 
-    const createTaskResult = await this.redisEvalScript(
-      this.createTaskLua,
-      4,
-      seqId,
-      taskId,
-      Date.now(),
-      JSON.stringify(taskState),
-      ...subtasksIds
-    );
-
-    // Add rest subtask fields
-    if (restSubtaskFields.length > 0) {
-      await this.redis.hmset(
-        `${this.subTasksStateKey}:${seqId}`,
-        ...restSubtaskFields,
+      const createTaskResult = await this.redisEvalScript(
+        this.createTaskLua,
+        4,
+        seqId,
+        taskId,
+        Date.now(),
+        JSON.stringify(taskState),
+        ...subtasksIds,
       );
-    }
 
-    return {
-      seqId,
-      created: createTaskResult === 1,
-    };
+      // Add rest subtask fields
+      if (restSubtaskFields.length > 0) {
+        await this.redis.hmset(
+          `${this.subTasksStateKey}:${seqId}`,
+          ...restSubtaskFields,
+        );
+      }
+
+      return {
+        seqId,
+        created: createTaskResult === 1,
+      };
+    } catch (error) {
+      patchError(error, 'Error in createTask');
+
+      throw error;
+    }
   }
 
   async getTasks(
@@ -424,193 +429,240 @@ export class TaskTracker {
       };
     } = {},
   ): Promise<TaskState[]> {
-    const range = params.range || {
-      from: 0,
-      to: Number.MAX_SAFE_INTEGER,
-    };
+    try {
+      const range = params.range || {
+        from: 0,
+        to: Number.MAX_SAFE_INTEGER,
+      };
 
-    let seqIds: string[];
+      let seqIds: string[];
 
-    if (params.seqIds) {
-      seqIds = params.seqIds;
-    } else if (params.taskIds) {
-      // todo: add debug message
-      seqIds = filterSeqIds(
-        await this.redis.hmget(this.tasksIndexKey, ...params.taskIds),
-      );
-    } else {
-      seqIds = await this.redis.zrange(
-        this.tasksRegisterKey,
-        dateToNumber(range.to),
-        dateToNumber(range.from),
-        'BYSCORE',
-        'REV',
-        'LIMIT',
-        params.pagination?.offset || 0,
-        params.pagination?.limit || Number.MAX_SAFE_INTEGER,
-      );
-    }
-
-    if (seqIds.length === 0) {
-      return [];
-    }
-
-    const uniqTaskIds = Array.from(new Set(seqIds));
-    const rems = Promise.all(
-      uniqTaskIds.map(seqId =>
-        this.redis.scard(`${this.subTasksRegisterPrefix}:${seqId}`),
-      ),
-    );
-
-    const [tasks, subTasksRemainingJobs] = await Promise.all([
-      this.redis.hmget(this.tasksStateKey, ...uniqTaskIds),
-      rems,
-    ]);
-
-    const taskStates: TaskState[] = [];
-
-    tasks.forEach((taskState, idx) => {
-      if (!taskState) {
+      if (params.seqIds) {
+        seqIds = params.seqIds;
+      } else if (params.taskIds) {
         // todo: add debug message
-        return;
+        seqIds = filterSeqIds(
+          await this.redis.hmget(this.tasksIndexKey, ...params.taskIds),
+        );
+      } else {
+        seqIds = await this.redis.zrange(
+          this.tasksRegisterKey,
+          dateToNumber(range.to),
+          dateToNumber(range.from),
+          'BYSCORE',
+          'REV',
+          'LIMIT',
+          params.pagination?.offset || 0,
+          params.pagination?.limit || Number.MAX_SAFE_INTEGER,
+        );
       }
 
-      const state = JSON.parse(taskState) as TaskDbState;
+      if (seqIds.length === 0) {
+        return [];
+      }
 
-      taskStates.push(mapTaskState(state, subTasksRemainingJobs[idx]));
-    });
+      const uniqTaskIds = Array.from(new Set(seqIds));
+      const rems = Promise.all(
+        uniqTaskIds.map((seqId) =>
+          this.redis.scard(`${this.subTasksRegisterPrefix}:${seqId}`),
+        ),
+      );
 
-    return taskStates;
+      const [tasks, subTasksRemainingJobs] = await Promise.all([
+        this.redis.hmget(this.tasksStateKey, ...uniqTaskIds),
+        rems,
+      ]);
+
+      const taskStates: TaskState[] = [];
+
+      tasks.forEach((taskState, idx) => {
+        if (!taskState) {
+          // todo: add debug message
+          return;
+        }
+
+        const state = JSON.parse(taskState) as TaskDbState;
+
+        taskStates.push(mapTaskState(state, subTasksRemainingJobs[idx]));
+      });
+
+      return taskStates;
+    } catch (error) {
+      patchError(error, 'Error in getTasks');
+
+      throw error;
+    }
   }
 
   async getTaskState(taskId: string): Promise<TaskState | null> {
-    const tasks = await this.getTasks({ taskIds: [taskId] });
+    try {
+      const tasks = await this.getTasks({
+        taskIds: [taskId],
+      });
 
-    return tasks[0] || null;
+      return tasks[0] || null;
+    } catch (error) {
+      patchError(error, 'Error in getTaskState');
+
+      throw error;
+    }
   }
 
-  async getSubTasks(taskId: string, params?: {
-    subtaskIds?: string[];
-  }): Promise<SubTaskState[]> {
-    const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
-    const subtasks = await this.redis.hgetall(
-      `${this.subTasksStateKey}:${seqId}`,
-    );
+  async getSubTasks(
+    taskId: string,
+    params?: {
+      subtaskIds?: string[];
+    },
+  ): Promise<SubTaskState[]> {
+    try {
+      const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
+      const subtasks = await this.redis.hgetall(
+        `${this.subTasksStateKey}:${seqId}`,
+      );
 
-    const states = new Map<string, SubTaskState>();
+      const states = new Map<string, SubTaskState>();
 
-    Object.entries(subtasks).forEach(([redisKey, value]) => {
-      const separatorIdx = redisKey.indexOf(KEY_SEPARATOR);
+      Object.entries(subtasks).forEach(([redisKey, value]) => {
+        const separatorIdx = redisKey.indexOf(KEY_SEPARATOR);
 
-      if (separatorIdx === -1) {
-        throw new Error(`Invalid key "${redisKey}"`);
-      }
+        if (separatorIdx === -1) {
+          throw new Error(`Invalid key "${redisKey}"`);
+        }
 
-      const subtaskId = redisKey.slice(0, separatorIdx);
+        const subtaskId = redisKey.slice(0, separatorIdx);
 
-      // can be optimized by using hmget instead of hgetall
-      if (params?.subtaskIds && !params.subtaskIds.includes(subtaskId)) {
-        return;
-      }
+        // can be optimized by using hmget instead of hgetall
+        if (params?.subtaskIds && !params.subtaskIds.includes(subtaskId)) {
+          return;
+        }
 
-      const key = redisKey.slice(separatorIdx + 3);
+        const key = redisKey.slice(separatorIdx + 3);
 
-      const state = states.get(subtaskId) || {
-        subTaskId: subtaskId,
-        state: SubTaskStates.New,
-        attempts: -1,
-        startedAt: null,
-        completedAt: null,
-        failedAt: null,
-        name: null,
-        metadata: null,
-      };
+        const state = states.get(subtaskId) || {
+          subTaskId: subtaskId,
+          state: SubTaskStates.New,
+          attempts: -1,
+          startedAt: null,
+          completedAt: null,
+          failedAt: null,
+          name: null,
+          metadata: null,
+        };
 
-      // trick to prevent multiple Map.set calls
-      if (state.attempts === -1) {
-        state.attempts = 0;
-        states.set(subtaskId, state);
-      }
+        // trick to prevent multiple Map.set calls
+        if (state.attempts === -1) {
+          state.attempts = 0;
+          states.set(subtaskId, state);
+        }
 
-      switch (key) {
-        case 'state':
-          state.state = parseInt(value, 10) as SubTaskStates;
-          break;
-        case 'started_at':
-          state.startedAt = parseInt(value, 10);
-          break;
-        case 'finished_at':
-          state.completedAt = parseInt(value, 10);
-          break;
-        case 'failed_at':
-          state.failedAt = parseInt(value, 10);
-          break;
-        case 'attempts':
-          state.attempts = parseInt(value, 10);
-          break;
-        case 'name':
-          state.name = value;
-          break;
-        case 'metadata':
-          state.metadata = JSON.parse(value);
-          break;
-      }
-    });
+        switch (key) {
+          case 'state':
+            state.state = parseInt(value, 10) as SubTaskStates;
+            break;
+          case 'started_at':
+            state.startedAt = parseInt(value, 10);
+            break;
+          case 'finished_at':
+            state.completedAt = parseInt(value, 10);
+            break;
+          case 'failed_at':
+            state.failedAt = parseInt(value, 10);
+            break;
+          case 'attempts':
+            state.attempts = parseInt(value, 10);
+            break;
+          case 'name':
+            state.name = value;
+            break;
+          case 'metadata':
+            state.metadata = JSON.parse(value) as Metadata;
+            break;
+        }
+      });
 
-    return Array.from(states.values());
+      return Array.from(states.values());
+    } catch (error) {
+      patchError(error, 'Error in getSubTasks');
+
+      throw error;
+    }
   }
 
   async completeSubTask(
     taskId: string,
     subTaskId: string,
   ): Promise<{ allTasksCompleted: boolean }> {
-    const ts = new Date().getTime();
+    try {
+      const ts = new Date().getTime();
 
-    const remainingTasks = await this.redisEvalScript(
-      this.completeSubTaskLua,
-      3,
-      taskId,
-      subTaskId,
-      ts,
-    );
+      const remainingTasks = await this.redisEvalScript(
+        this.completeSubTaskLua,
+        3,
+        taskId,
+        subTaskId,
+        ts,
+      );
 
-    return {
-      allTasksCompleted: remainingTasks === 0,
-    };
+      return {
+        allTasksCompleted: remainingTasks === 0,
+      };
+    } catch (error) {
+      patchError(error, 'Error in completeSubTask');
+
+      throw error;
+    }
   }
 
   async startSubTask(taskId: string, subTaskId: string) {
-    const ts = new Date().getTime();
+    try {
+      const ts = new Date().getTime();
 
-    await this.redisEvalScript(
-      this.subTaskInProgressLua,
-      3,
-      taskId,
-      subTaskId,
-      ts,
-    );
+      await this.redisEvalScript(
+        this.subTaskInProgressLua,
+        3,
+        taskId,
+        subTaskId,
+        ts,
+      );
+    } catch (error) {
+      patchError(error, 'Error in startSubTask');
+
+      throw error;
+    }
   }
 
   async failSubTask(taskId: string, subTaskId: string) {
-    const ts = new Date().getTime();
+    try {
+      const ts = new Date().getTime();
 
-    await this.redisEvalScript(
-      this.subTaskFailedLua,
-      3,
-      taskId,
-      subTaskId,
-      ts
-    );
+      await this.redisEvalScript(
+        this.subTaskFailedLua,
+        3,
+        taskId,
+        subTaskId,
+        ts,
+      );
+    } catch (error) {
+      patchError(error, 'Error in failSubTask');
+
+      throw error;
+    }
   }
 
   async isSubTaskComplete(taskId: string, subTaskId: string): Promise<boolean> {
-    const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
-    const has = await this.redis.sismember(
-      `${this.subTasksRegisterPrefix}:${seqId}`,
-      subTaskId,
-    );
+    try {
+      const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
+      const has = await this.redis.sismember(
+        `${this.subTasksRegisterPrefix}:${seqId}`,
+        subTaskId,
+      );
 
-    return !has;
+      return !has;
+    } catch (error) {
+      patchError(error, 'Error in isSubTaskComplete');
+
+      throw error;
+    }
   }
 
   async waitReadiness(): Promise<void> {
@@ -621,28 +673,36 @@ export class TaskTracker {
     taskId: string,
     subTaskId: string,
   ): Promise<SubTaskPoint[]> {
-    const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
-    const points = await this.redis.zrange(
-      `${this.subTaskPointPrefix}:${seqId}:${subTaskId}`,
-      0,
-      -1,
-    );
+    try {
+      const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
+      const points = await this.redis.zrange(
+        `${this.subTaskPointPrefix}:${seqId}:${subTaskId}`,
+        0,
+        -1,
+      );
 
-    return points.map(point => {
-      const dbPoint: SubTaskPointDbState = JSON.parse(point);
+      return points.map((point) => {
+        const dbPoint = JSON.parse(point) as SubTaskPointDbState;
 
-      return {
-        subTaskId,
-        event: dbPoint.event,
-        timestamp: parseInt(dbPoint.timestamp, 10),
-      };
-    });
+        return {
+          subTaskId,
+          event: dbPoint.event,
+          timestamp: parseInt(dbPoint.timestamp, 10),
+        };
+      });
+    } catch (error) {
+      patchError(error, 'Error in getSubTaskPoints');
+
+      throw error;
+    }
   }
 
   // todo: retry callback for task and subtask
   // todo: add task group id
   // todo: implement clearing old jobs
   // todo: handle not found
-  // todo: patch errors
   // todo: fix attempts count
+  // todo: add task expireAt?
+  // todo: add tasks dependencies (relation between ids)
+  // todo: add feature "Set task to optional". If task is optional it shouldn't be waited to complete task
 }

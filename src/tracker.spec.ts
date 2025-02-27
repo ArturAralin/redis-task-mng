@@ -72,7 +72,7 @@ describe('TaskTracker', () => {
             subTaskId: 't1',
           },
         ],
-      })
+      }),
     ]);
 
     const postCreation = await tracker.createTask(taskId, {
@@ -87,19 +87,20 @@ describe('TaskTracker', () => {
     const notCreatedTasks = concurrentCreation.filter((t) => !t.created);
     const uniqSeqIds = new Set([
       postCreation.seqId,
-      ...concurrentCreation.map((t) => t.seqId)
+      ...concurrentCreation.map((t) => t.seqId),
     ]);
 
     expect(createdTasks.length).toBe(1);
     expect(notCreatedTasks.length).toBe(2);
     expect(uniqSeqIds.size).toBe(4);
     expect(postCreation.created).toBe(false);
-  })
+  });
 
   test('complete one subtask', async () => {
     const taskId: string = uuid.v4();
 
     await tracker.createTask(taskId, {
+      name: 'Long task',
       subtasks: [
         {
           subTaskId: 't1',
@@ -115,7 +116,7 @@ describe('TaskTracker', () => {
 
     await tracker.startSubTask(taskId, 't1');
 
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       setTimeout(() => {
         resolve(null);
       }, 10);
@@ -123,7 +124,7 @@ describe('TaskTracker', () => {
 
     await tracker.failSubTask(taskId, 't1');
 
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       setTimeout(() => {
         resolve(null);
       }, 10);
@@ -131,7 +132,7 @@ describe('TaskTracker', () => {
 
     await tracker.startSubTask(taskId, 't1');
 
-    await new Promise(resolve => {
+    await new Promise((resolve) => {
       setTimeout(() => {
         resolve(null);
       }, 10);
@@ -217,7 +218,7 @@ describe('TaskTracker', () => {
       subtasks: [
         {
           subTaskId: 't1',
-          name: 'Sub task name'
+          name: 'Sub task name',
         },
         {
           subTaskId: 't2',
@@ -225,7 +226,7 @@ describe('TaskTracker', () => {
             foo: 'bar',
             bool: false,
             num: -1,
-          }
+          },
         },
         {
           subTaskId: 't3',
@@ -271,7 +272,7 @@ describe('TaskTracker', () => {
       startedAt: expect.any(Number),
       completedAt: expect.any(Number),
       failedAt: null,
-      name: 'Sub task name'
+      name: 'Sub task name',
     });
 
     expect(subTasks[1]).toMatchObject({
@@ -285,7 +286,7 @@ describe('TaskTracker', () => {
         foo: 'bar',
         bool: false,
         num: -1,
-      }
+      },
     });
 
     expect(subTasks[2]).toMatchObject({
@@ -345,7 +346,7 @@ describe('TaskTracker', () => {
       tracker.completeSubTask(taskId, 't3'),
     ]);
 
-    const recordsWithTaskCompleteFlag = res.filter(r => r.allTasksCompleted);
+    const recordsWithTaskCompleteFlag = res.filter((r) => r.allTasksCompleted);
 
     expect(recordsWithTaskCompleteFlag.length).toBe(1);
 
