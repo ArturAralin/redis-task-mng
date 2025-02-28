@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { TaskTracker } from '../lib';
 import Handlebars from 'handlebars';
+import { sub, parseISO } from 'date-fns';
 import {
   SubTaskEvents,
   SubTaskState,
@@ -17,6 +18,15 @@ import {
   NEW_COLOR,
 } from './constants';
 import { prettifyUnixTs } from './utils';
+
+Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
+  // @ts-ignore
+  return arg1 == arg2
+    ? // @ts-ignore
+      options.fn(this as unknown)
+    : // @ts-ignore
+      (options.inverse(this as unknown) as unknown);
+});
 
 export interface UIOptions {
   redis: Redis;
@@ -108,6 +118,46 @@ function getSubTaskDuration(subTask: SubTaskState): number | null {
 // todo: add breadcrumbs
 // todo: add search and filters
 // todo: add retry callback
+// todo: procedural columns for metadata
+
+const TIME_UNIT_REGEX = /(?<value>\d+)(?<unit>h)/i;
+
+function extractPeriodFilter(query: unknown) {
+  if (typeof query !== 'object' || query === null) {
+    return {
+      from: 0,
+      to: Date.now(),
+    };
+  }
+
+  const params = query as Partial<Record<string, string>>;
+
+  if (params.period) {
+    const match = params.period.match(TIME_UNIT_REGEX);
+
+    if (match?.groups?.unit && match?.groups?.value) {
+      const now = new Date();
+
+      return {
+        from: sub(now, {
+          hours: parseInt(match.groups.value, 10),
+        }).getTime(),
+        to: now.getTime(),
+      };
+    }
+  }
+
+  const from = params.period_from ? parseISO(params.period_from).getTime() : 0;
+
+  const to = params.period_to
+    ? parseISO(params.period_to).getTime()
+    : Date.now();
+
+  return {
+    from,
+    to,
+  };
+}
 
 export function expressUiServer(options: UIOptions): express.Router {
   const pathPrefix = options.pathPrefix || DEFAULT_PARAMS.pathPrefix;
@@ -216,8 +266,12 @@ export function expressUiServer(options: UIOptions): express.Router {
   });
 
   app.get(`${pathPrefix}/tasks`, async (req, res, next) => {
+    const range = extractPeriodFilter(req.query);
+
     try {
-      const tasks = await options.client.getTasks();
+      const tasks = await options.client.getTasks({
+        range,
+      });
 
       const mappedTasks = tasks.map((task) => {
         const metadata: string[] = [];
@@ -248,6 +302,7 @@ export function expressUiServer(options: UIOptions): express.Router {
       res.send(
         renderTasksPage({
           pageTitle: 'Tasks',
+          query: req.query,
           tasks: mappedTasks,
         }),
       );

@@ -1,4 +1,11 @@
-<h2>Tasks</h2>
+<nav>
+  <ul>
+    <li><h2>Tasks</h2></li>
+  </ul>
+  <ul>
+    <li><button onclick="toggleDialog();">Filters</button></li>
+  </ul>
+</nav>
 <table>
   <thead>
     <tr>
@@ -46,3 +53,58 @@
     {{/each}}
   </tbody>
 </table>
+<dialog>
+  <article>
+    <header>
+      <button aria-label="Close" rel="prev" onclick="toggleDialog()"></button>
+      <p>
+        <strong>Tasks filters</strong>
+      </p>
+    </header>
+    <form method="get">
+      <p>
+        <fieldset>
+          <legend>Predefined periods</legend>
+          <input type="radio" id="none" name="period" onclick="showCustomPeriod(false)" value="" {{#unless query.period}}checked{{/unless}} />
+          <label htmlFor="custom">None</label>
+          <input type="radio" id="custom" name="period" onclick="showCustomPeriod(true)" value="custom" {{#ifEquals query.period 'custom'}}checked{{/ifEquals}} />
+          <label htmlFor="custom">Custom</label>
+          <input type="radio" id="last_day" name="period" onclick="showCustomPeriod(false)" value="24h" {{#ifEquals query.period '24h'}}checked{{/ifEquals}} />
+          <label htmlFor="last_day">Last 24 hours</label>
+          <input type="radio" id="last_week" name="period" onclick="showCustomPeriod(false)" value="168h" {{#ifEquals query.period '168h'}}checked{{/ifEquals}} />
+          <label htmlFor="last_week">Last week</label>
+          <input type="radio" id="last_month" name="period" onclick="showCustomPeriod(false)" value="720h" {{#ifEquals query.period '720h'}}checked{{/ifEquals}} />
+          <label htmlFor="last_month">Last month</label>
+        </fieldset>
+        <fieldset id="select-custom-period" role="group" {{#ifEquals query.period 'custom'}}enabled{{else}}disabled{{/ifEquals}}>
+          <legend>Period from/to</legend>
+          <input type="datetime-local" name="period_from" aria-label="Datetime local" value="{{query.period_from}}" required>
+          <input type="datetime-local" name="period_to" aria-label="Datetime local" value="{{query.period_to}}" required>
+        </fieldset>
+      </p>
+      <input type="submit" value="Apply filters"/>
+    </form>
+  </article>
+</dialog>
+<script lang="javascript">
+  function toggleDialog() {
+    const dialog = document.querySelector('dialog');
+    const isOpen = dialog.attributes.getNamedItem('open');
+
+    if (isOpen) {
+      dialog.removeAttribute('open');
+    } else {
+      dialog.setAttribute('open', '');
+    }
+  }
+
+  function showCustomPeriod(show) {
+    const selectCustomPeriod = document.querySelector('#select-custom-period');
+
+    if (show) {
+      selectCustomPeriod.removeAttribute('disabled');
+    } else {
+      selectCustomPeriod.setAttribute('disabled', '');
+    }
+  }
+</script>
