@@ -23,6 +23,13 @@ async function main() {
         },
         {
           key: 'stringField',
+          mapper(value) {
+            return {
+              type: 'url',
+              url: `https://google.com/search?q=${value}`,
+              linkText: `Google search for "${value}"`,
+            }
+          }
         },
         {
           key: 'numberField',

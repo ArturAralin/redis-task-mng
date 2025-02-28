@@ -6,6 +6,8 @@ import { TaskTracker } from '../lib';
 import Handlebars from 'handlebars';
 import { sub, parseISO } from 'date-fns';
 import {
+  Metadata,
+  MetadataValue,
   SubTaskEvents,
   SubTaskState,
   SubTaskStates,
@@ -28,6 +30,19 @@ Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
       (options.inverse(this as unknown) as unknown);
 });
 
+export interface UITextColumn {
+  type: 'text';
+  text: string;
+}
+
+export interface UIUrlColumn {
+  type: 'url';
+  url: string;
+  linkText?: string;
+}
+
+export type UIColumn = UITextColumn | UIUrlColumn;
+
 export interface UIOptions {
   redis: Redis;
   client: TaskTracker;
@@ -35,11 +50,38 @@ export interface UIOptions {
   metadataSettings?: {
     tasksMetadataColumns?: {
       key: string;
+      mapper?: (value: MetadataValue) => UIColumn;
     }[];
     // subTasksMetadataColumns?: {
     //   key: string;
     // }[]
   };
+}
+
+function defaultUIColumnMapper(value: MetadataValue): UITextColumn {
+  return {
+    type: 'text',
+    text: String(value),
+  };
+}
+
+function displayUIColumn(column: UIColumn) {
+  if (column.type === 'text') {
+    return column.text;
+  }
+
+  if (column.type === 'url') {
+    console.log('column.linkText', column.linkText);
+    const linkText =
+      column.linkText ||
+      (column.url.length > 40 ? `${column.url.slice(0, 37)}...` : column.url);
+
+    console.log('linkText', linkText);
+
+    return `<a target="_blank" href="${column.url}">${linkText}</a>`;
+  }
+
+  return '-';
 }
 
 const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
@@ -115,6 +157,15 @@ function getSubTaskDuration(subTask: SubTaskState): number | null {
   return null;
 }
 
+function metadataToKeyValue(
+  metadata: Metadata | null,
+): { key: string; value: unknown }[] {
+  return Object.entries(metadata || {}).map(([key, value]) => ({
+    key,
+    value,
+  }));
+}
+
 // todo: add breadcrumbs
 // todo: add search and filters
 // todo: add retry callback
@@ -127,6 +178,7 @@ function extractPeriodFilter(query: unknown) {
     return {
       from: 0,
       to: Date.now(),
+      default: true,
     };
   }
 
@@ -143,6 +195,7 @@ function extractPeriodFilter(query: unknown) {
           hours: parseInt(match.groups.value, 10),
         }).getTime(),
         to: now.getTime(),
+        default: false,
       };
     }
   }
@@ -156,6 +209,7 @@ function extractPeriodFilter(query: unknown) {
   return {
     from,
     to,
+    default: false,
   };
 }
 
@@ -271,6 +325,11 @@ export function expressUiServer(options: UIOptions): express.Router {
     try {
       const tasks = await options.client.getTasks({
         range,
+        ...(range.default && {
+          pagination: {
+            limit: 100,
+          },
+        }),
       });
 
       const mappedTasks = tasks.map((task) => {
@@ -278,7 +337,8 @@ export function expressUiServer(options: UIOptions): express.Router {
 
         options.metadataSettings?.tasksMetadataColumns?.forEach((col) => {
           if (typeof task.metadata?.[col.key] !== 'undefined') {
-            metadata.push(String(task.metadata[col.key]));
+            const mapper = col.mapper || defaultUIColumnMapper;
+            metadata.push(displayUIColumn(mapper(task.metadata?.[col.key])));
           } else {
             metadata.push('-');
           }
@@ -325,6 +385,7 @@ export function expressUiServer(options: UIOptions): express.Router {
           task: {
             ...task,
             name: getTaskName(task),
+            metadata: metadataToKeyValue(task.metadata),
           },
           // todo: display whole metadata
           subtasks: subtasks.map((subtask) => ({
@@ -377,12 +438,7 @@ export function expressUiServer(options: UIOptions): express.Router {
             pageTitle: 'Subtask',
             subtask: {
               ...subtask,
-              metadata: Object.entries(subtask.metadata || {}).map(
-                ([key, value]) => ({
-                  key,
-                  value,
-                }),
-              ),
+              metadata: metadataToKeyValue(subtask.metadata),
             },
             points: extendedPoints.map((point) => ({
               ...point,
