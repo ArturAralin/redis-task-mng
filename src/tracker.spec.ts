@@ -114,6 +114,30 @@ describe('TaskTracker', () => {
       ],
     });
 
+    await tracker.startSubTask(taskId, 't1', {
+      metadata: {
+        'Here is': 'start'
+      }
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(null);
+      }, 10);
+    });
+
+    await tracker.failSubTask(taskId, 't1', {
+      metadata: {
+        'Here is': 'fail'
+      }
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(null);
+      }, 10);
+    });
+
     await tracker.startSubTask(taskId, 't1');
 
     await new Promise((resolve) => {
@@ -122,23 +146,11 @@ describe('TaskTracker', () => {
       }, 10);
     });
 
-    await tracker.failSubTask(taskId, 't1');
-
-    await new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(null);
-      }, 10);
+    await tracker.completeSubTask(taskId, 't1', {
+      metadata: {
+        'Here is': 'complete'
+      }
     });
-
-    await tracker.startSubTask(taskId, 't1');
-
-    await new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(null);
-      }, 10);
-    });
-
-    await tracker.completeSubTask(taskId, 't1');
 
     const taskState = await tracker.getTaskState(taskId);
 
@@ -156,24 +168,34 @@ describe('TaskTracker', () => {
       subTaskId: 't1',
       event: SubTaskEvents.InProgress,
       timestamp: expect.any(Number),
+      metadata: {
+        'Here is': 'start'
+      }
     });
 
     expect(points[1]).toMatchObject({
       subTaskId: 't1',
       event: SubTaskEvents.Failed,
       timestamp: expect.any(Number),
+      metadata: {
+        'Here is': 'fail'
+      }
     });
 
     expect(points[2]).toMatchObject({
       subTaskId: 't1',
       event: SubTaskEvents.InProgress,
       timestamp: expect.any(Number),
+      metadata: null,
     });
 
     expect(points[3]).toMatchObject({
       subTaskId: 't1',
       event: SubTaskEvents.Complete,
       timestamp: expect.any(Number),
+      metadata: {
+        'Here is': 'complete'
+      }
     });
   });
 

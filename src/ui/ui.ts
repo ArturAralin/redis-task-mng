@@ -71,12 +71,9 @@ function displayUIColumn(column: UIColumn) {
   }
 
   if (column.type === 'url') {
-    console.log('column.linkText', column.linkText);
     const linkText =
       column.linkText ||
       (column.url.length > 40 ? `${column.url.slice(0, 37)}...` : column.url);
-
-    console.log('linkText', linkText);
 
     return `<a target="_blank" href="${column.url}">${linkText}</a>`;
   }
@@ -157,9 +154,10 @@ function getSubTaskDuration(subTask: SubTaskState): number | null {
   return null;
 }
 
+type MetadataKeyValue = { key: string; value: unknown };
 function metadataToKeyValue(
   metadata: Metadata | null,
-): { key: string; value: unknown }[] {
+): MetadataKeyValue[] {
   return Object.entries(metadata || {}).map(([key, value]) => ({
     key,
     value,
@@ -429,15 +427,33 @@ export function expressUiServer(options: UIOptions): express.Router {
             subTaskId: req.params.subtaskId,
             event: SubTaskEvents.Added,
             timestamp: task.addedAt,
+            elapsed: 0,
+            metadata: [] as MetadataKeyValue[],
           },
-          ...points,
         ];
+
+        points.forEach((point, idx) => {
+          extendedPoints.push({
+            subTaskId: req.params.subtaskId,
+            event: point.event,
+            timestamp: point.timestamp,
+            elapsed: point.timestamp - extendedPoints[idx].timestamp,
+            metadata: metadataToKeyValue(point.metadata),
+          })
+        })
 
         res.send(
           renderSubTaskPointsPage({
             pageTitle: 'Subtask',
             subtask: {
               ...subtask,
+              startedAt: subtask.startedAt
+                ? prettifyUnixTs(subtask.startedAt)
+                : '-',
+              failedAt: subtask.failedAt ? prettifyUnixTs(subtask.failedAt) : '-',
+              completedAt: subtask.completedAt
+                ? prettifyUnixTs(subtask.completedAt)
+                : '-',
               metadata: metadataToKeyValue(subtask.metadata),
             },
             points: extendedPoints.map((point) => ({

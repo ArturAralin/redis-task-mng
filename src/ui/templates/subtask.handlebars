@@ -46,17 +46,33 @@
   </div>
   <div>
     <h3>Points</h3>
-    {{#if points.length}}
     {{#each points}}
     <p>
-      <kbd style="background-color: {{this.eventColor}};">{{this.event}}</kbd>
-      {{this.timestamp}}
+      <details>
+        <summary>
+          <kbd style="background-color: {{this.eventColor}};">{{this.event}}</kbd>
+          {{this.timestamp}}
+          {{#if this.elapsed}}
+          (Elapsed {{this.elapsed}}ms)
+          {{/if}}
+        </summary>
+        <p>
+        {{#if this.metadata}}
+          <h6>Metadata</h6>
+          <table>
+            <tbody>
+              {{#each this.metadata}}
+              <tr>
+                <th scope="row"><strong>{{this.key}}</strong></th>
+                <td>{{this.value}}</td>
+              </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        {{/if}}
+        </p>
+      </details>
     </p>
     {{/each}}
-  {{else}}
-    <p style="text-align: center;">
-      <span>No points</span>
-    </p>
-  {{/if}}
   </div>
 </div>
