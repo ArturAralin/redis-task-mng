@@ -598,7 +598,7 @@ export class TaskTracker {
     subTaskId: string,
     params?: {
       metadata?: Metadata;
-    }
+    },
   ): Promise<{ allTasksCompleted: boolean }> {
     try {
       const ts = new Date().getTime();
@@ -625,9 +625,13 @@ export class TaskTracker {
     }
   }
 
-  async startSubTask(taskId: string, subTaskId: string, params?: {
-    metadata?: Metadata;
-  }) {
+  async startSubTask(
+    taskId: string,
+    subTaskId: string,
+    params?: {
+      metadata?: Metadata;
+    },
+  ) {
     try {
       const ts = new Date().getTime();
       const metadata = params?.metadata
@@ -649,9 +653,13 @@ export class TaskTracker {
     }
   }
 
-  async failSubTask(taskId: string, subTaskId: string, params?: {
-    metadata?: Metadata;
-  }) {
+  async failSubTask(
+    taskId: string,
+    subTaskId: string,
+    params?: {
+      metadata?: Metadata;
+    },
+  ) {
     try {
       const ts = new Date().getTime();
       const metadata = params?.metadata
@@ -707,7 +715,9 @@ export class TaskTracker {
 
       return points.map((point) => {
         const dbPoint = JSON.parse(point) as SubTaskPointDbState;
-        const metadata: Metadata | null = JSON.parse(dbPoint.metadata || 'null');
+        const metadata = JSON.parse(
+          dbPoint.metadata || 'null',
+        ) as Metadata | null;
 
         return {
           subTaskId,
@@ -731,4 +741,5 @@ export class TaskTracker {
   // todo: add task expireAt?
   // todo: add tasks dependencies (relation between ids)
   // todo: add feature "Set task to optional". If task is optional it shouldn't be waited to complete task
+  // todo: add cancel task
 }

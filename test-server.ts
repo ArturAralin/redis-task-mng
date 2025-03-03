@@ -19,21 +19,28 @@ async function main() {
     metadataSettings: {
       tasksMetadataColumns: [
         {
-          key: 'boolField',
-        },
-        {
-          key: 'stringField',
-          mapper(value) {
+          name: 'Procedural column text',
+          mapper(task) {
             return {
-              type: 'url',
-              url: `https://google.com/search?q=${value}`,
-              linkText: `Google search for "${value}"`,
+              type: 'text',
+              text: `I'm procedural column for task ${task.name}`,
             }
           }
         },
         {
-          key: 'numberField',
-        },
+          name: 'Procedural column link',
+          mapper(task) {
+            if (task.metadata?.stringField) {
+              return {
+                type: 'url',
+                text: `I'm a link`,
+                url: `https://google.com?q=${task.metadata?.stringField}`
+              }
+            }
+
+            return null
+          }
+        }
       ]
     }
   }))

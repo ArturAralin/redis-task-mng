@@ -11,7 +11,7 @@
     <tr>
       <th>Name</th>
       {{#each tasksMetadataColumns}}
-      <th scope="col">{{this.key}}</th>
+      <th scope="col">{{this.name}}</th>
       {{/each}}
       <th scope="col">Added At</th>
       <th scope="col">Completed At</th>
@@ -19,21 +19,6 @@
     </tr>
   </thead>
   <tbody>
-    {{!-- <tr>
-      <th scope="row"></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th></th>
-      <th>
-        <select>
-          <option>All</option>
-          <option>Waiting</option>
-          <option>Completed</option>
-        </select>
-      </th>
-    </tr> --}}
     {{#each tasks}}
     <tr>
       <th scope="row"><a href="{{this.pageUrl}}">{{this.name}}</a></th>

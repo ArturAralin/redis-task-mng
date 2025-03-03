@@ -38,7 +38,7 @@ export interface UITextColumn {
 export interface UIUrlColumn {
   type: 'url';
   url: string;
-  linkText?: string;
+  text?: string;
 }
 
 export type UIColumn = UITextColumn | UIUrlColumn;
@@ -49,19 +49,12 @@ export interface UIOptions {
   pathPrefix?: string;
   metadataSettings?: {
     tasksMetadataColumns?: {
-      key: string;
-      mapper?: (value: MetadataValue) => UIColumn;
+      name: string;
+      mapper: (task: TaskState) => UIColumn | null;
     }[];
     // subTasksMetadataColumns?: {
     //   key: string;
     // }[]
-  };
-}
-
-function defaultUIColumnMapper(value: MetadataValue): UITextColumn {
-  return {
-    type: 'text',
-    text: String(value),
   };
 }
 
@@ -72,7 +65,7 @@ function displayUIColumn(column: UIColumn) {
 
   if (column.type === 'url') {
     const linkText =
-      column.linkText ||
+      column.text ||
       (column.url.length > 40 ? `${column.url.slice(0, 37)}...` : column.url);
 
     return `<a target="_blank" href="${column.url}">${linkText}</a>`;
@@ -154,10 +147,12 @@ function getSubTaskDuration(subTask: SubTaskState): number | null {
   return null;
 }
 
-type MetadataKeyValue = { key: string; value: unknown };
-function metadataToKeyValue(
-  metadata: Metadata | null,
-): MetadataKeyValue[] {
+interface MetadataKeyValue {
+  key: string;
+  value: unknown;
+}
+
+function metadataToKeyValue(metadata: Metadata | null): MetadataKeyValue[] {
   return Object.entries(metadata || {}).map(([key, value]) => ({
     key,
     value,
@@ -167,7 +162,6 @@ function metadataToKeyValue(
 // todo: add breadcrumbs
 // todo: add search and filters
 // todo: add retry callback
-// todo: procedural columns for metadata
 
 const TIME_UNIT_REGEX = /(?<value>\d+)(?<unit>h)/i;
 
@@ -334,9 +328,10 @@ export function expressUiServer(options: UIOptions): express.Router {
         const metadata: string[] = [];
 
         options.metadataSettings?.tasksMetadataColumns?.forEach((col) => {
-          if (typeof task.metadata?.[col.key] !== 'undefined') {
-            const mapper = col.mapper || defaultUIColumnMapper;
-            metadata.push(displayUIColumn(mapper(task.metadata?.[col.key])));
+          const columnValue = col.mapper(task);
+
+          if (columnValue) {
+            metadata.push(displayUIColumn(columnValue));
           } else {
             metadata.push('-');
           }
@@ -439,8 +434,8 @@ export function expressUiServer(options: UIOptions): express.Router {
             timestamp: point.timestamp,
             elapsed: point.timestamp - extendedPoints[idx].timestamp,
             metadata: metadataToKeyValue(point.metadata),
-          })
-        })
+          });
+        });
 
         res.send(
           renderSubTaskPointsPage({
@@ -450,7 +445,9 @@ export function expressUiServer(options: UIOptions): express.Router {
               startedAt: subtask.startedAt
                 ? prettifyUnixTs(subtask.startedAt)
                 : '-',
-              failedAt: subtask.failedAt ? prettifyUnixTs(subtask.failedAt) : '-',
+              failedAt: subtask.failedAt
+                ? prettifyUnixTs(subtask.failedAt)
+                : '-',
               completedAt: subtask.completedAt
                 ? prettifyUnixTs(subtask.completedAt)
                 : '-',
