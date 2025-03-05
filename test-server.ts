@@ -13,11 +13,28 @@ async function main() {
 
   const app = express();
 
+  function buildKibanaUrl(params: {
+    from: number;
+    to: number | null;
+    query: string,
+  }) {
+    const from = `'${new Date(params.from).toISOString()}'`;
+    const to = params.to ? `'${new Date(params.to).toISOString()}'` : 'now';
+
+    const parts = [
+      'https://logs.devtaxis.uk/app/discover#/',
+      `?_g=(time:(from:${from},to:${to}))`,
+      `&_a=(query:(language:kuery,query:'${params.query}'),sort:!(!('@timestamp',desc)))`,
+    ];
+
+    return parts.join('');
+  }
+
   app.use(expressUiServer({
     redis,
     client,
-    metadataSettings: {
-      tasksMetadataColumns: [
+    tasksSection: {
+      proceduralColumns: [
         {
           name: 'Procedural column text',
           mapper(task) {
@@ -38,11 +55,21 @@ async function main() {
               }
             }
 
-            return null
+            const autoParkId = 'a-b-c';
+
+            return {
+              type: 'url',
+              text: 'kib',
+              url: buildKibanaUrl({
+                from: task.addedAt,
+                to: null,
+                query: `serviceName:"worker" and moduleName:"calculate-routes-subscriber" and (meta.data.autoParkId:"${autoParkId}" or meta.autoParkId:"${autoParkId}")`,
+              })
+            }
           }
         }
       ]
-    }
+    },
   }))
 
   app.listen(8817);

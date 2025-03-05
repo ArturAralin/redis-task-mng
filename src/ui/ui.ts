@@ -7,7 +7,6 @@ import Handlebars from 'handlebars';
 import { sub, parseISO } from 'date-fns';
 import {
   Metadata,
-  MetadataValue,
   SubTaskEvents,
   SubTaskState,
   SubTaskStates,
@@ -47,14 +46,13 @@ export interface UIOptions {
   redis: Redis;
   client: TaskTracker;
   pathPrefix?: string;
-  metadataSettings?: {
-    tasksMetadataColumns?: {
+
+
+  tasksSection?: {
+    proceduralColumns?: {
       name: string;
       mapper: (task: TaskState) => UIColumn | null;
-    }[];
-    // subTasksMetadataColumns?: {
-    //   key: string;
-    // }[]
+    }[]
   };
 }
 
@@ -68,7 +66,7 @@ function displayUIColumn(column: UIColumn) {
       column.text ||
       (column.url.length > 40 ? `${column.url.slice(0, 37)}...` : column.url);
 
-    return `<a target="_blank" href="${column.url}">${linkText}</a>`;
+    return `<a target="_blank" href="${encodeURI(column.url)}">${linkText}</a>`;
   }
 
   return '-';
@@ -76,10 +74,9 @@ function displayUIColumn(column: UIColumn) {
 
 const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
   pathPrefix: '/rtm',
-  metadataSettings: {
-    tasksMetadataColumns: [],
-    // subTasksMetadataColumns: [],
-  },
+  tasksSection: {
+    proceduralColumns: [],
+  }
 };
 
 const STATIC_PATH = path.join(__dirname, 'static');
@@ -216,12 +213,11 @@ export function expressUiServer(options: UIOptions): express.Router {
 
   const renderTasksPage = render.bind(null, HB_LAYOUT, HB_TASKS, {
     serverPrefix: pathPrefix,
-    ...options.metadataSettings,
+    ...options.tasksSection,
   });
 
   const renderTaskPage = render.bind(null, HB_LAYOUT, HB_TASK, {
     serverPrefix: pathPrefix,
-    ...options.metadataSettings,
   });
 
   const renderSubTaskPointsPage = render.bind(null, HB_LAYOUT, HB_SUBTASK, {
@@ -327,7 +323,7 @@ export function expressUiServer(options: UIOptions): express.Router {
       const mappedTasks = tasks.map((task) => {
         const metadata: string[] = [];
 
-        options.metadataSettings?.tasksMetadataColumns?.forEach((col) => {
+        options.tasksSection?.proceduralColumns?.forEach((col) => {
           const columnValue = col.mapper(task);
 
           if (columnValue) {
@@ -432,7 +428,9 @@ export function expressUiServer(options: UIOptions): express.Router {
             subTaskId: req.params.subtaskId,
             event: point.event,
             timestamp: point.timestamp,
-            elapsed: point.timestamp - extendedPoints[idx].timestamp,
+            // ignore elapsed between added at and first point
+            elapsed:
+              idx === 0 ? 0 : point.timestamp - extendedPoints[idx].timestamp,
             metadata: metadataToKeyValue(point.metadata),
           });
         });
