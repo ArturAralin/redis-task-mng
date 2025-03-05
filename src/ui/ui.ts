@@ -21,12 +21,14 @@ import {
 import { prettifyUnixTs } from './utils';
 
 Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
+  /* eslint-disable */
   // @ts-ignore
   return arg1 == arg2
     ? // @ts-ignore
       options.fn(this as unknown)
     : // @ts-ignore
       (options.inverse(this as unknown) as unknown);
+  /* eslint-enable */
 });
 
 export interface UITextColumn {
@@ -47,12 +49,21 @@ export interface UIOptions {
   client: TaskTracker;
   pathPrefix?: string;
 
-
   tasksSection?: {
     proceduralColumns?: {
       name: string;
       mapper: (task: TaskState) => UIColumn | null;
-    }[]
+    }[];
+  };
+  subtasksSection?: {
+    onRetryAction?: (
+      subTask: SubTaskState,
+      task: TaskState,
+    ) => void | Promise<void>;
+    showRetryAction?: (
+      subTask: SubTaskState,
+      task: TaskState,
+    ) => boolean | undefined | null;
   };
 }
 
@@ -76,7 +87,8 @@ const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
   pathPrefix: '/rtm',
   tasksSection: {
     proceduralColumns: [],
-  }
+  },
+  subtasksSection: {},
 };
 
 const STATIC_PATH = path.join(__dirname, 'static');
@@ -218,11 +230,17 @@ export function expressUiServer(options: UIOptions): express.Router {
 
   const renderTaskPage = render.bind(null, HB_LAYOUT, HB_TASK, {
     serverPrefix: pathPrefix,
+    ...options.subtasksSection,
   });
 
   const renderSubTaskPointsPage = render.bind(null, HB_LAYOUT, HB_SUBTASK, {
     serverPrefix: pathPrefix,
   });
+
+  const showActionsColumn = Boolean(
+    options.subtasksSection?.showRetryAction &&
+      options.subtasksSection?.onRetryAction,
+  );
 
   app.use(`${pathPrefix}/static`, express.static(STATIC_PATH));
 
@@ -376,6 +394,7 @@ export function expressUiServer(options: UIOptions): express.Router {
       res.send(
         renderTaskPage({
           pageTitle: 'Task',
+          showActionsColumn,
           task: {
             ...task,
             name: getTaskName(task),
@@ -384,6 +403,8 @@ export function expressUiServer(options: UIOptions): express.Router {
           // todo: display whole metadata
           subtasks: subtasks.map((subtask) => ({
             ...subtask,
+            showActionsColumn,
+            retryActionValue: `?action=retry&sid=${task.seqId}&st_id=${subtask.subTaskId}`,
             name: getSubTaskName(subtask),
             startedAt: subtask.startedAt
               ? prettifyUnixTs(subtask.startedAt)
@@ -400,6 +421,48 @@ export function expressUiServer(options: UIOptions): express.Router {
       );
     } catch (e) {
       next(e);
+    }
+  });
+
+  app.post(`${pathPrefix}/tasks/:seqId`, async (req, res, next) => {
+    if (!options.subtasksSection?.onRetryAction) {
+      res.redirect(`${req.path}?retry=not_configured`);
+
+      return;
+    }
+
+    try {
+      const {
+        action,
+        sid: seqId,
+        st_id: subTaskId,
+      } = req.query as Record<string, string>;
+
+      if (action !== 'retry') {
+        throw new Error('Unknown action');
+      }
+
+      if (!seqId) {
+        throw new Error('Missing seqId');
+      }
+
+      if (!subTaskId) {
+        throw new Error('Missing subTaskId');
+      }
+
+      const [task] = await options.client.getTasks({
+        seqIds: [seqId],
+      });
+
+      const [subtask] = await options.client.getSubTasks(task.taskId, {
+        subtaskIds: [subTaskId],
+      });
+
+      await options.subtasksSection.onRetryAction(subtask, task);
+
+      res.redirect(`${req.path}?retry=success`);
+    } catch (error) {
+      next(error);
     }
   });
 

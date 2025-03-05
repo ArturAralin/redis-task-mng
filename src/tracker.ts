@@ -91,9 +91,10 @@ function mapTaskState(dbState: TaskDbState): TaskState {
     addedAt: dbState.addedAt,
     completeAt: dbState.completeAt || null,
     subtasksCount: dbState.subtasksCount,
-    subtasksRemaining: typeof dbState.remainingSubTasks === 'number'
-      ? dbState.remainingSubTasks
-      : -1,
+    subtasksRemaining:
+      typeof dbState.remainingSubTasks === 'number'
+        ? dbState.remainingSubTasks
+        : -1,
     subtasksFailed: dbState.failedSubTasks || 0,
     complete: dbState.remainingSubTasks === 0,
     name: dbState.name || null,
@@ -506,11 +507,14 @@ export class TaskTracker {
         return [];
       }
 
-      const tasks = await this.redis.hmget(this.tasksStateKey, ...new Set(seqIds));
+      const tasks = await this.redis.hmget(
+        this.tasksStateKey,
+        ...new Set(seqIds),
+      );
 
       const taskStates: TaskState[] = [];
 
-      tasks.forEach((taskState, idx) => {
+      tasks.forEach((taskState) => {
         if (!taskState) {
           // todo: add debug message
           return;
@@ -523,17 +527,17 @@ export class TaskTracker {
         }
 
         if (
-          params.excludeFailed
-          && state.failedSubTasks !== undefined
-          && state.failedSubTasks > 0
+          params.excludeFailed &&
+          state.failedSubTasks !== undefined &&
+          state.failedSubTasks > 0
         ) {
           return;
         }
 
         if (
-          params.excludeInProgress
-          && !state.completeAt
-          && !state.failedSubTasks
+          params.excludeInProgress &&
+          !state.completeAt &&
+          !state.failedSubTasks
         ) {
           return;
         }

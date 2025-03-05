@@ -68,8 +68,21 @@ async function main() {
             }
           }
         }
-      ]
+      ],
     },
+    subtasksSection: {
+      showRetryAction(subtask, task) {
+        return task.name?.includes('Sub tasks state');
+      },
+      async onRetryAction(subTask, task) {
+        console.log('call retry');
+          await new Promise((resolve) => {
+            setTimeout(() => {
+              resolve(null)
+            }, 500)
+          })
+      },
+    }
   }))
 
   app.listen(8817);

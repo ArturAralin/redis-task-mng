@@ -23,6 +23,9 @@
       <th scope="col">Started At</th>
       <th scope="col">Completed At</th>
       <th scope="col">Failed At</th>
+      {{#if showActionsColumn}}
+      <th scope="col">Actions</th>
+      {{/if}}
     </tr>
   </thead>
   <tbody>
@@ -35,6 +38,13 @@
       <td>{{this.startedAt}}</td>
       <td>{{this.completedAt}}</td>
       <td>{{this.failedAt}}</td>
+      {{#if showActionsColumn}}
+      <td scope="col">
+        <form method="post" action="{{retryActionValue}}">
+          <input type="submit" value="Retry">
+        </form>
+      </td>
+      {{/if}}
     </tr>
     {{/each}}
   </tbody>

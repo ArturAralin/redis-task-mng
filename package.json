@@ -3,6 +3,10 @@
   "version": "0.0.9",
   "main": "dist/lib.js",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArturAralin/redis-task-mng.git"
+  },
   "peerDependencies": {
     "ioredis": "5.x"
   },
