@@ -31,7 +31,11 @@
         {{#if this.complete }}
         <kbd style="background-color: {{this.completedColor}};">Completed</kbd>
         {{else}}
-        <kbd style="background-color: {{this.notCompletedColor}};">Waiting</kbd>
+          {{#if this.hasFailed}}
+            <kbd style="background-color: {{this.failedColor}};">Have failed</kbd>
+          {{else}}
+            <kbd style="background-color: {{this.notCompletedColor}};">Waiting</kbd>
+          {{/if}}
         {{/if}}
       </td>
     </tr>
@@ -65,6 +69,17 @@
           <legend>Period from/to</legend>
           <input type="datetime-local" name="period_from" aria-label="Datetime local" value="{{query.period_from}}" required>
           <input type="datetime-local" name="period_to" aria-label="Datetime local" value="{{query.period_to}}" required>
+        </fieldset>
+      </p>
+      <p>
+        <fieldset>
+          <legend>Statuses:</legend>
+          <input type="checkbox" id="ex_in_progress" name="ex_in_progress" {{#if query.ex_in_progress}}checked{{/if}} />
+          <label htmlFor="ex_in_progress">Exclude Waiting</label>
+          <input type="checkbox" id="ex_completed" name="ex_completed" {{#if query.ex_completed}}checked{{/if}} />
+          <label htmlFor="ex_completed">Exclude Completed</label>
+          <input type="checkbox" id="ex_failed" name="ex_failed" {{#if query.ex_failed}}checked{{/if}} />
+          <label htmlFor="ex_failed">Exclude Have failed</label>
         </fieldset>
       </p>
       <input type="submit" value="Apply filters"/>

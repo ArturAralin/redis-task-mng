@@ -318,6 +318,9 @@ export function expressUiServer(options: UIOptions): express.Router {
             limit: 100,
           },
         }),
+        excludeCompleted: req.query.ex_completed == 'on',
+        excludeFailed: req.query.ex_failed == 'on',
+        excludeInProgress: req.query.ex_in_progress == 'on',
       });
 
       const mappedTasks = tasks.map((task) => {
@@ -341,8 +344,10 @@ export function expressUiServer(options: UIOptions): express.Router {
           addedAt: task.addedAt ? prettifyUnixTs(task.addedAt) : '-',
           // todo: add duration
           complete: task.complete,
+          hasFailed: task.subtasksFailed > 0,
           completedColor: COMPLETE_COLOR,
           notCompletedColor: NEW_COLOR,
+          failedColor: FAIL_COLOR,
           pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
           metadata,
         };

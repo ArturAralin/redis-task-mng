@@ -532,8 +532,8 @@ export class TaskTracker {
 
         if (
           params.excludeInProgress
-          && state.remainingSubTasks !== undefined
-          && state.remainingSubTasks > 0
+          && !state.completeAt
+          && !state.failedSubTasks
         ) {
           return;
         }
