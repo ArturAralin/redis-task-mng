@@ -21,8 +21,10 @@ interface TaskDbState {
   addedAt: number;
   completeAt?: number;
   subtasksCount: number;
+  remainingSubTasks?: number;
   name?: string;
   metadata?: Metadata;
+  failedSubTasks?: number;
   v: 1;
 }
 
@@ -54,6 +56,7 @@ export interface TaskState {
   completeAt: number | null;
   subtasksCount: number;
   subtasksRemaining: number;
+  subtasksFailed: number;
   metadata: Metadata | null;
   complete: boolean;
 }
@@ -81,15 +84,18 @@ interface SubTaskPoint {
   metadata: Metadata | null;
 }
 
-function mapTaskState(dbState: TaskDbState, remainingTasks: number): TaskState {
+function mapTaskState(dbState: TaskDbState): TaskState {
   return {
     seqId: dbState.seqId,
     taskId: dbState.taskId,
     addedAt: dbState.addedAt,
     completeAt: dbState.completeAt || null,
     subtasksCount: dbState.subtasksCount,
-    subtasksRemaining: remainingTasks,
-    complete: remainingTasks === 0,
+    subtasksRemaining: typeof dbState.remainingSubTasks === 'number'
+      ? dbState.remainingSubTasks
+      : -1,
+    subtasksFailed: dbState.failedSubTasks || 0,
+    complete: dbState.remainingSubTasks === 0,
     name: dbState.name || null,
     metadata: dbState.metadata || null,
   };
@@ -123,7 +129,9 @@ export class TaskTracker {
 
   private subTasksStateKey: string;
 
-  private subTasksRegisterPrefix: string;
+  private remainingSubTasksPrefix: string;
+
+  private failedSubTasksPrefix: string;
 
   private tasksCounterKey: string;
 
@@ -145,7 +153,8 @@ export class TaskTracker {
     this.tasksStateKey = `${this.prefix}:tasks`;
     this.tasksRegisterKey = `${this.prefix}:register`;
     this.subTasksStateKey = `${this.prefix}:subtasks`;
-    this.subTasksRegisterPrefix = `${this.prefix}:subtasks_register`;
+    this.remainingSubTasksPrefix = `${this.prefix}:subtasks_register`;
+    this.failedSubTasksPrefix = `${this.prefix}:subtasks_failed`;
     this.tasksCounterKey = `${this.prefix}:tasks_counter`;
     this.tasksIndexKey = `${this.prefix}:tasks_index`;
     this.subTaskPointPrefix = `${this.prefix}:subtask_points`;
@@ -178,6 +187,39 @@ export class TaskTracker {
 
         redis.call('ZADD', key, timestamp, cjson.encode(record))
       end
+
+      local function update_task_state(seq_id, timestamp)
+        local state = redis.call('HGET', '${this.tasksStateKey}', seq_id)
+
+        if not state then
+          return
+        end
+
+        state = cjson.decode(state)
+        local remaining_sub_tasks = tonumber(redis.call('SCARD', '${this.remainingSubTasksPrefix}:' .. seq_id))
+        local failed_sub_tasks = tonumber(redis.call('HLEN', '${this.failedSubTasksPrefix}:' .. seq_id))
+
+        local has_changes = false
+
+        if remaining_sub_tasks == 0 then
+          has_changes = true
+          state['completeAt'] = timestamp
+        end
+
+        if remaining_sub_tasks ~= state['remainingSubTasks'] then
+          has_changes = true
+          state['remainingSubTasks'] = remaining_sub_tasks
+        end
+
+        if failed_sub_tasks ~= state['failedSubTasks'] then
+          has_changes = true
+          state['failedSubTasks'] = failed_sub_tasks
+        end
+
+        if has_changes then
+          redis.call('HSET', '${this.tasksStateKey}', seq_id, cjson.encode(state))
+        end
+      end
     `;
 
     const luaCreateTask = `
@@ -196,7 +238,7 @@ export class TaskTracker {
       redis.call('HSET', '${this.tasksStateKey}', seq_id, state)
       redis.call('HSET', '${this.tasksIndexKey}', task_id, seq_id)
 
-      redis.call('SADD', '${this.subTasksRegisterPrefix}:' .. seq_id, unpack(ARGV))
+      redis.call('SADD', '${this.remainingSubTasksPrefix}:' .. seq_id, unpack(ARGV))
 
       for _, st_id in ipairs(ARGV) do
         redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, st_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.New})
@@ -228,21 +270,13 @@ export class TaskTracker {
 
       redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.Complete})
       redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}finished_at', completed_at)
-      redis.call('SREM', '${this.subTasksRegisterPrefix}:' .. seq_id, subtask_id)
+      redis.call('SREM', '${this.remainingSubTasksPrefix}:' .. seq_id, subtask_id)
+      redis.call('HDEL', '${this.failedSubTasksPrefix}:' .. seq_id, subtask_id)
 
-      local remaining_tasks = redis.call('SCARD', '${this.subTasksRegisterPrefix}:' .. seq_id)
-
-      if remaining_tasks == 0 then
-        local task_json_state = redis.call('HGET', '${this.tasksStateKey}', seq_id)
-        local task_state = cjson.decode(task_json_state)
-        task_state['completeAt'] = completed_at
-
-        redis.call('HSET', '${this.tasksStateKey}', seq_id, cjson.encode(task_state))
-      end
-
+      update_task_state(seq_id, completed_at)
       store_event(seq_id, subtask_id, completed_at, ${SubTaskEvents.Complete}, metadata)
 
-      return remaining_tasks
+      return redis.call('SCARD', '${this.remainingSubTasksPrefix}:' .. seq_id)
     `;
 
     const luaSubTaskInProgress = `
@@ -293,7 +327,9 @@ export class TaskTracker {
 
       redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.Failed})
       redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}failed_at', failed_at)
+      redis.call('HSET', '${this.failedSubTasksPrefix}:' .. seq_id, subtask_id, 1)
 
+      update_task_state(seq_id, failed_at)
       store_event(seq_id, subtask_id, failed_at, ${SubTaskEvents.Failed}, metadata)
     `;
 
@@ -367,6 +403,7 @@ export class TaskTracker {
         seqId,
         addedAt: Date.now(),
         subtasksCount: params.subtasks.length,
+        remainingSubTasks: params.subtasks.length,
         name: params.name,
         metadata: params.metadata,
         v: 1,
@@ -428,6 +465,9 @@ export class TaskTracker {
       };
       seqIds?: string[];
       taskIds?: string[];
+      excludeCompleted?: boolean;
+      excludeFailed?: boolean;
+      excludeInProgress?: boolean;
       pagination?: {
         limit?: number;
         offset?: number;
@@ -466,17 +506,7 @@ export class TaskTracker {
         return [];
       }
 
-      const uniqTaskIds = Array.from(new Set(seqIds));
-      const rems = Promise.all(
-        uniqTaskIds.map((seqId) =>
-          this.redis.scard(`${this.subTasksRegisterPrefix}:${seqId}`),
-        ),
-      );
-
-      const [tasks, subTasksRemainingJobs] = await Promise.all([
-        this.redis.hmget(this.tasksStateKey, ...uniqTaskIds),
-        rems,
-      ]);
+      const tasks = await this.redis.hmget(this.tasksStateKey, ...new Set(seqIds));
 
       const taskStates: TaskState[] = [];
 
@@ -488,7 +518,27 @@ export class TaskTracker {
 
         const state = JSON.parse(taskState) as TaskDbState;
 
-        taskStates.push(mapTaskState(state, subTasksRemainingJobs[idx]));
+        if (params.excludeCompleted && state.remainingSubTasks === 0) {
+          return;
+        }
+
+        if (
+          params.excludeFailed
+          && state.failedSubTasks !== undefined
+          && state.failedSubTasks > 0
+        ) {
+          return;
+        }
+
+        if (
+          params.excludeInProgress
+          && state.remainingSubTasks !== undefined
+          && state.remainingSubTasks > 0
+        ) {
+          return;
+        }
+
+        taskStates.push(mapTaskState(state));
       });
 
       return taskStates;
@@ -685,7 +735,7 @@ export class TaskTracker {
     try {
       const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
       const has = await this.redis.sismember(
-        `${this.subTasksRegisterPrefix}:${seqId}`,
+        `${this.remainingSubTasksPrefix}:${seqId}`,
         subTaskId,
       );
 

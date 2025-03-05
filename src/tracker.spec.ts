@@ -132,6 +132,20 @@ describe('TaskTracker', () => {
       }
     });
 
+    const taskStateAfterFail = await tracker.getTaskState(taskId);
+
+    expect(taskStateAfterFail).toMatchObject({
+      taskId,
+      addedAt: expect.any(Number),
+      completeAt: null,
+      subtasksCount: 3,
+      subtasksRemaining: 3,
+      subtasksFailed: 1,
+      complete: false,
+      name: 'Long task',
+      metadata: null
+    });
+
     await new Promise((resolve) => {
       setTimeout(() => {
         resolve(null);
