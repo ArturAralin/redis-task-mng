@@ -3,7 +3,9 @@
     <li><h2>Tasks</h2></li>
   </ul>
   <ul>
-    <li><button onclick="toggleDialog();">Filters</button></li>
+    <li>
+      <button onclick="toggleDialog();">Filters</button>
+    </li>
   </ul>
 </nav>
 <table>
@@ -51,6 +53,12 @@
       </p>
     </header>
     <form method="get">
+      <p>
+        <label for="query">
+          <a href="#" data-placement="right" data-tooltip="You can use raw text or syntax like &quot;metadata.field&quot;:&quot;my value&quot;">Query</a>
+          <input type="text" id="query" name="query" value="{{query.query}}" placeholder="Search query" />
+        </label>
+      </p>
       <p>
         <fieldset>
           <legend>Predefined periods</legend>

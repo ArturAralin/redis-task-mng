@@ -91,6 +91,8 @@ const DEFAULT_PARAMS: Omit<Required<UIOptions>, 'redis' | 'client'> = {
   subtasksSection: {},
 };
 
+const QUERY_ALLOWED_SYMBOLS = /[ a-zа-я0-9_-ё]/i;
+
 const STATIC_PATH = path.join(__dirname, 'static');
 const TEMPLATES_PATH = path.join(__dirname, 'templates');
 
@@ -214,6 +216,24 @@ function extractPeriodFilter(query: unknown) {
   };
 }
 
+function getQueryRegex(query: unknown): RegExp | null {
+  if (typeof query !== 'object' || query === null) {
+    return null;
+  }
+
+  const params = query as Partial<Record<string, string>>;
+
+  if (params.query && typeof params.query === 'string') {
+    if (!QUERY_ALLOWED_SYMBOLS.test(params.query)) {
+      throw new Error('Query contains disallowed symbols');
+    }
+
+    return new RegExp(`.*${params.query}.*`, 'i');
+  }
+
+  return null;
+}
+
 export function expressUiServer(options: UIOptions): express.Router {
   const pathPrefix = options.pathPrefix || DEFAULT_PARAMS.pathPrefix;
 
@@ -289,7 +309,7 @@ export function expressUiServer(options: UIOptions): express.Router {
               case SubTaskStates.InProgress:
                 subTasksStats.inProgress++;
                 break;
-              case SubTaskStates.New:
+              case SubTaskStates.Waiting:
                 subTasksStats.new++;
                 break;
             }
@@ -329,11 +349,13 @@ export function expressUiServer(options: UIOptions): express.Router {
     const range = extractPeriodFilter(req.query);
 
     try {
+      const queryRegex = getQueryRegex(req.query);
+
       const tasks = await options.client.getTasks({
         range,
         ...(range.default && {
           pagination: {
-            limit: 100,
+            limit: 500,
           },
         }),
         excludeCompleted: req.query.ex_completed == 'on',
@@ -341,7 +363,21 @@ export function expressUiServer(options: UIOptions): express.Router {
         excludeInProgress: req.query.ex_in_progress == 'on',
       });
 
-      const mappedTasks = tasks.map((task) => {
+      const mappedTasks: Record<string, unknown>[] = [];
+
+      for (let i = 0; i < tasks.length; i += 1) {
+        const task = tasks[i];
+
+        if (queryRegex) {
+          const keepRow = queryRegex.test(task.taskId) || (
+            task.name && queryRegex.test(task.name))
+
+
+          if (!keepRow) {
+            continue;
+          }
+        }
+
         const metadata: string[] = [];
 
         options.tasksSection?.proceduralColumns?.forEach((col) => {
@@ -354,7 +390,7 @@ export function expressUiServer(options: UIOptions): express.Router {
           }
         });
 
-        return {
+        mappedTasks.push({
           taskId: task.taskId,
           seqId: task.seqId,
           name: getTaskName(task),
@@ -368,8 +404,8 @@ export function expressUiServer(options: UIOptions): express.Router {
           failedColor: FAIL_COLOR,
           pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
           metadata,
-        };
-      });
+        });
+      }
 
       res.send(
         renderTasksPage({
@@ -597,9 +633,9 @@ function mapTaskState(state: SubTaskStates): {
         state: 'In Progress',
         stateColor: IN_PROGRESS_COLOR,
       };
-    case SubTaskStates.New:
+    case SubTaskStates.Waiting:
       return {
-        state: 'New',
+        state: 'Waiting',
         stateColor: NEW_COLOR,
       };
     default:
