@@ -365,13 +365,11 @@ export function expressUiServer(options: UIOptions): express.Router {
 
       const mappedTasks: Record<string, unknown>[] = [];
 
-      for (let i = 0; i < tasks.length; i += 1) {
-        const task = tasks[i];
-
+      for (const task of tasks) {
         if (queryRegex) {
-          const keepRow = queryRegex.test(task.taskId) || (
-            task.name && queryRegex.test(task.name))
-
+          const keepRow =
+            queryRegex.test(task.taskId) ||
+            (task.name && queryRegex.test(task.name));
 
           if (!keepRow) {
             continue;
