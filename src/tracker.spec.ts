@@ -336,7 +336,7 @@ describe('TaskTracker', () => {
 
     expect(subTasks[3]).toMatchObject({
       subTaskId: 't4',
-      state: SubTaskStates.New,
+      state: SubTaskStates.Waiting,
       startedAt: null,
       completedAt: null,
       failedAt: null,

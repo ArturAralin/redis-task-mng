@@ -2,7 +2,7 @@ import { ReplyError, type Redis } from 'ioredis';
 
 export enum SubTaskStates {
   Failed = -1,
-  New = 0,
+  Waiting = 0,
   InProgress = 1,
   Complete = 2,
 }
@@ -242,7 +242,7 @@ export class TaskTracker {
       redis.call('SADD', '${this.remainingSubTasksPrefix}:' .. seq_id, unpack(ARGV))
 
       for _, st_id in ipairs(ARGV) do
-        redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, st_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.New})
+        redis.call('HSET', '${this.subTasksStateKey}:' .. seq_id, st_id .. '${KEY_SEPARATOR}state', ${SubTaskStates.Waiting})
       end
 
       return 1
@@ -295,7 +295,7 @@ export class TaskTracker {
 
       local current_state = redis.call('HGET', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}state')
 
-      if current_state == '${SubTaskStates.New}' or current_state == '${SubTaskStates.Failed}' then
+      if current_state == '${SubTaskStates.Waiting}' or current_state == '${SubTaskStates.Failed}' then
         redis.call('HINCRBY', '${this.subTasksStateKey}:' .. seq_id, subtask_id .. '${KEY_SEPARATOR}attempts', 1)
       end
 
@@ -599,7 +599,7 @@ export class TaskTracker {
 
         const state = states.get(subtaskId) || {
           subTaskId: subtaskId,
-          state: SubTaskStates.New,
+          state: SubTaskStates.Waiting,
           attempts: -1,
           startedAt: null,
           completedAt: null,
