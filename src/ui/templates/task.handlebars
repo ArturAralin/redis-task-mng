@@ -1,4 +1,7 @@
 <h2>Task: {{task.name}}</h2>
+<div style="height: 250px;">
+  <canvas id="statusesDistribution"></canvas>
+</div>
 {{#if task.metadata.length}}
 <h4>Metadata</h4>
 <table>
@@ -49,3 +52,31 @@
     {{/each}}
   </tbody>
 </table>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const taskStatusesDistribution = document.getElementById('statusesDistribution');
+  const data = JSON.parse('{{{statusesDistribution}}}');
+
+  new Chart(taskStatusesDistribution, {
+    type: 'bar',
+    data,
+    options: {
+      plugins: {
+      },
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+        },
+        y: {
+          stacked: true,
+          ticks: {
+            precision: 0
+          }
+        }
+      }
+    }
+  });
+
+</script>

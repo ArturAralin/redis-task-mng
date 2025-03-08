@@ -1,10 +1,10 @@
 import express from 'express';
-import type { Redis } from 'ioredis';
+import { type Redis } from 'ioredis';
 import path from 'path';
 import fs from 'fs';
 import { TaskTracker } from '../lib';
 import Handlebars from 'handlebars';
-import { sub, parseISO } from 'date-fns';
+import { sub, parseISO, formatDate, startOfSecond } from 'date-fns';
 import {
   Metadata,
   SubTaskEvents,
@@ -425,10 +425,137 @@ export function expressUiServer(options: UIOptions): express.Router {
 
       const subtasks = await options.client.getSubTasks(task.taskId);
 
+      const subtasksStatesByDates = Object.create(null) as Record<
+        string,
+        Record<string, SubTaskEvents>
+      >;
+      const quants = new Set<number>();
+
+      await Promise.all(
+        subtasks.map(async (subtask) => {
+          const points = await options.client.getSubTaskPoints(
+            task.taskId,
+            subtask.subTaskId,
+          );
+
+          for (const point of points) {
+            const date = startOfSecond(new Date(point.timestamp)).getTime();
+
+            subtasksStatesByDates[date] = subtasksStatesByDates[date] || {};
+            subtasksStatesByDates[date][point.subTaskId] = point.event;
+            quants.add(date);
+          }
+        }),
+      );
+
+      const fails: number[] = [];
+      const inProgress: number[] = [];
+      const completed: number[] = [];
+      const waiting: number[] = [];
+
+      const orderedTimeQuants = Object.keys(subtasksStatesByDates).sort(
+        (a, b) => Number(a) - Number(b),
+      );
+
+      const subTaskStates: Record<string, SubTaskEvents> = Object.fromEntries(
+        subtasks.map((subtask) => [subtask.subTaskId, SubTaskEvents.Added]),
+      );
+
+      let inProgressCount = 0;
+      let failedCount = 0;
+      let completedCount = 0;
+      let waitingCount = subtasks.length;
+
+      for (const timeQuant of orderedTimeQuants) {
+        for (const [subtaskId, newEventState] of Object.entries(
+          subtasksStatesByDates[timeQuant],
+        )) {
+          if (newEventState !== subTaskStates[subtaskId]) {
+            switch (newEventState) {
+              case SubTaskEvents.InProgress: {
+                inProgressCount += 1;
+                break;
+              }
+              case SubTaskEvents.Failed: {
+                failedCount += 1;
+                break;
+              }
+              case SubTaskEvents.Complete: {
+                completedCount += 1;
+                break;
+              }
+            }
+
+            switch (subTaskStates[subtaskId]) {
+              case SubTaskEvents.InProgress: {
+                inProgressCount -= 1;
+                break;
+              }
+              case SubTaskEvents.Failed: {
+                failedCount -= 1;
+                break;
+              }
+              case SubTaskEvents.Complete: {
+                completedCount -= 1;
+                break;
+              }
+              case SubTaskEvents.Added: {
+                waitingCount -= 1;
+                break;
+              }
+            }
+
+            subTaskStates[subtaskId] = newEventState;
+          }
+        }
+
+        fails.push(failedCount);
+        inProgress.push(inProgressCount);
+        completed.push(completedCount);
+        waiting.push(waitingCount);
+      }
+
+      const statusesDistribution = {
+        labels: orderedTimeQuants.map((quant) =>
+          formatDate(Number(quant), 'hh:mm:ss'),
+        ),
+        datasets: [
+          {
+            label: 'Waiting',
+            data: waiting,
+            backgroundColor: NEW_COLOR,
+            borderColor: NEW_COLOR,
+            stepped: 'middle',
+          },
+          {
+            label: 'In progress',
+            data: inProgress,
+            backgroundColor: IN_PROGRESS_COLOR,
+            borderColor: IN_PROGRESS_COLOR,
+            stepped: 'middle',
+          },
+          {
+            label: 'Completed',
+            data: completed,
+            backgroundColor: COMPLETE_COLOR,
+            borderColor: COMPLETE_COLOR,
+            stepped: 'middle',
+          },
+          {
+            label: 'Failed',
+            data: fails,
+            backgroundColor: FAIL_COLOR,
+            borderColor: FAIL_COLOR,
+            stepped: 'middle',
+          },
+        ],
+      };
+
       res.send(
         renderTaskPage({
           pageTitle: 'Task',
           showActionsColumn,
+          statusesDistribution: JSON.stringify(statusesDistribution),
           task: {
             ...task,
             name: getTaskName(task),

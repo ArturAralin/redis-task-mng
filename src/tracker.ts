@@ -755,6 +755,9 @@ export class TaskTracker {
     return this.ready;
   }
 
+  /**
+   * Points returns in ascending order
+   */
   async getSubTaskPoints(
     taskId: string,
     subTaskId: string,
