@@ -84,19 +84,21 @@ interface SubTaskPoint {
   metadata: Metadata | null;
 }
 
-function mapTaskState(dbState: TaskDbState): TaskState {
+function mapTaskState(dbState: TaskDbState, oldRemaining: number): TaskState {
+  const subtasksRemaining =
+    typeof dbState.remainingSubTasks === 'number'
+      ? dbState.remainingSubTasks
+      : oldRemaining;
+
   return {
     seqId: dbState.seqId,
     taskId: dbState.taskId,
     addedAt: dbState.addedAt,
     completeAt: dbState.completeAt || null,
     subtasksCount: dbState.subtasksCount,
-    subtasksRemaining:
-      typeof dbState.remainingSubTasks === 'number'
-        ? dbState.remainingSubTasks
-        : -1,
+    subtasksRemaining,
     subtasksFailed: dbState.failedSubTasks || 0,
-    complete: dbState.remainingSubTasks === 0,
+    complete: subtasksRemaining === 0,
     name: dbState.name || null,
     metadata: dbState.metadata || null,
   };
@@ -512,38 +514,49 @@ export class TaskTracker {
         ...new Set(seqIds),
       );
 
-      const taskStates: TaskState[] = [];
+      const taskStates: TaskState[] = Array.from({ length: tasks.length });
 
-      tasks.forEach((taskState) => {
-        if (!taskState) {
-          // todo: add debug message
-          return;
-        }
+      await Promise.all(
+        tasks.map(async (taskState, idx) => {
+          if (!taskState) {
+            // todo: add debug message
+            return;
+          }
 
-        const state = JSON.parse(taskState) as TaskDbState;
+          const state = JSON.parse(taskState) as TaskDbState;
 
-        if (params.excludeCompleted && state.remainingSubTasks === 0) {
-          return;
-        }
+          if (params.excludeCompleted && state.remainingSubTasks === 0) {
+            return;
+          }
 
-        if (
-          params.excludeFailed &&
-          state.failedSubTasks !== undefined &&
-          state.failedSubTasks > 0
-        ) {
-          return;
-        }
+          if (
+            params.excludeFailed &&
+            state.failedSubTasks !== undefined &&
+            state.failedSubTasks > 0
+          ) {
+            return;
+          }
 
-        if (
-          params.excludeInProgress &&
-          !state.completeAt &&
-          !state.failedSubTasks
-        ) {
-          return;
-        }
+          if (
+            params.excludeInProgress &&
+            !state.completeAt &&
+            !state.failedSubTasks
+          ) {
+            return;
+          }
 
-        taskStates.push(mapTaskState(state));
-      });
+          // backward compatibility
+          let oldRemaining = -1;
+
+          if (state.remainingSubTasks === undefined) {
+            oldRemaining = await this.redis.scard(
+              `${this.remainingSubTasksPrefix}:${state.seqId}`,
+            );
+          }
+
+          taskStates[idx] = mapTaskState(state, oldRemaining);
+        }),
+      );
 
       return taskStates;
     } catch (error) {
@@ -790,7 +803,6 @@ export class TaskTracker {
     }
   }
 
-  // todo: retry callback for task and subtask
   // todo: add task group id
   // todo: implement clearing old jobs
   // todo: handle not found
