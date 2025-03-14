@@ -514,51 +514,49 @@ export class TaskTracker {
         ...new Set(seqIds),
       );
 
-      const taskStates: TaskState[] = Array.from({ length: tasks.length });
+      const result: TaskState[] = [];
 
-      await Promise.all(
-        tasks.map(async (taskState, idx) => {
-          if (!taskState) {
-            // todo: add debug message
-            return;
-          }
+      for (const taskState of tasks) {
+        if (!taskState) {
+          // todo: add debug message
+          continue;
+        }
 
-          const state = JSON.parse(taskState) as TaskDbState;
+        const state = JSON.parse(taskState) as TaskDbState;
 
-          if (params.excludeCompleted && state.remainingSubTasks === 0) {
-            return;
-          }
+        if (params.excludeCompleted && state.remainingSubTasks === 0) {
+          continue;
+        }
 
-          if (
-            params.excludeFailed &&
-            state.failedSubTasks !== undefined &&
-            state.failedSubTasks > 0
-          ) {
-            return;
-          }
+        if (
+          params.excludeFailed &&
+          state.failedSubTasks !== undefined &&
+          state.failedSubTasks > 0
+        ) {
+          continue;
+        }
 
-          if (
-            params.excludeInProgress &&
-            !state.completeAt &&
-            !state.failedSubTasks
-          ) {
-            return;
-          }
+        if (
+          params.excludeInProgress &&
+          !state.completeAt &&
+          !state.failedSubTasks
+        ) {
+          continue;
+        }
 
-          // backward compatibility
-          let oldRemaining = -1;
+        // backward compatibility
+        let oldRemaining = -1;
 
-          if (state.remainingSubTasks === undefined) {
-            oldRemaining = await this.redis.scard(
-              `${this.remainingSubTasksPrefix}:${state.seqId}`,
-            );
-          }
+        if (state.remainingSubTasks === undefined) {
+          oldRemaining = await this.redis.scard(
+            `${this.remainingSubTasksPrefix}:${state.seqId}`,
+          );
+        }
 
-          taskStates[idx] = mapTaskState(state, oldRemaining);
-        }),
-      );
+        result.push(mapTaskState(state, oldRemaining));
+      }
 
-      return taskStates;
+      return result;
     } catch (error) {
       patchError(error, 'Error in getTasks');
 
