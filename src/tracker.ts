@@ -524,26 +524,6 @@ export class TaskTracker {
 
         const state = JSON.parse(taskState) as TaskDbState;
 
-        if (params.excludeCompleted && state.remainingSubTasks === 0) {
-          continue;
-        }
-
-        if (
-          params.excludeFailed &&
-          state.failedSubTasks !== undefined &&
-          state.failedSubTasks > 0
-        ) {
-          continue;
-        }
-
-        if (
-          params.excludeInProgress &&
-          !state.completeAt &&
-          !state.failedSubTasks
-        ) {
-          continue;
-        }
-
         // backward compatibility
         let oldRemaining = -1;
 
@@ -553,7 +533,25 @@ export class TaskTracker {
           );
         }
 
-        result.push(mapTaskState(state, oldRemaining));
+        const mappedTask = mapTaskState(state, oldRemaining);
+
+        if (params.excludeCompleted && mappedTask.subtasksRemaining === 0) {
+          continue;
+        }
+
+        if (params.excludeFailed && mappedTask.subtasksFailed > 0) {
+          continue;
+        }
+
+        if (
+          params.excludeInProgress &&
+          !mappedTask.completeAt &&
+          !mappedTask.subtasksFailed
+        ) {
+          continue;
+        }
+
+        result.push(mappedTask);
       }
 
       return result;
