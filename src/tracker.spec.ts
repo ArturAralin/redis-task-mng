@@ -116,8 +116,8 @@ describe('TaskTracker', () => {
 
     await tracker.startSubTask(taskId, 't1', {
       metadata: {
-        'Here is': 'start'
-      }
+        'Here is': 'start',
+      },
     });
 
     await new Promise((resolve) => {
@@ -128,8 +128,8 @@ describe('TaskTracker', () => {
 
     await tracker.failSubTask(taskId, 't1', {
       metadata: {
-        'Here is': 'fail'
-      }
+        'Here is': 'fail',
+      },
     });
 
     const taskStateAfterFail = await tracker.getTaskState(taskId);
@@ -143,7 +143,7 @@ describe('TaskTracker', () => {
       subtasksFailed: 1,
       complete: false,
       name: 'Long task',
-      metadata: null
+      metadata: null,
     });
 
     await new Promise((resolve) => {
@@ -162,8 +162,8 @@ describe('TaskTracker', () => {
 
     await tracker.completeSubTask(taskId, 't1', {
       metadata: {
-        'Here is': 'complete'
-      }
+        'Here is': 'complete',
+      },
     });
 
     const taskState = await tracker.getTaskState(taskId);
@@ -183,8 +183,8 @@ describe('TaskTracker', () => {
       event: SubTaskEvents.InProgress,
       timestamp: expect.any(Number),
       metadata: {
-        'Here is': 'start'
-      }
+        'Here is': 'start',
+      },
     });
 
     expect(points[1]).toMatchObject({
@@ -192,8 +192,8 @@ describe('TaskTracker', () => {
       event: SubTaskEvents.Failed,
       timestamp: expect.any(Number),
       metadata: {
-        'Here is': 'fail'
-      }
+        'Here is': 'fail',
+      },
     });
 
     expect(points[2]).toMatchObject({
@@ -208,8 +208,8 @@ describe('TaskTracker', () => {
       event: SubTaskEvents.Complete,
       timestamp: expect.any(Number),
       metadata: {
-        'Here is': 'complete'
-      }
+        'Here is': 'complete',
+      },
     });
   });
 

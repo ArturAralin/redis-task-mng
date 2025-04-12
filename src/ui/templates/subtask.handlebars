@@ -9,6 +9,14 @@
           <td>{{subtask.subTaskId}}</td>
         </tr>
         <tr>
+          <th scope="row"><strong>Name</strong></th>
+          {{#if subtask.name}}
+          <td>{{subtask.name}}</td>
+          {{else}}
+          <td>-</td>
+          {{/if}}
+        </tr>
+        <tr>
           <th scope="row"><strong>State</strong></th>
           <td>{{subtask.state}}</td>
         </tr>
@@ -53,7 +61,7 @@
           <kbd style="background-color: {{this.eventColor}};">{{this.event}}</kbd>
           {{this.timestamp}}
           {{#if this.elapsed}}
-          (Elapsed {{this.elapsed}}ms)
+          (Elapsed {{this.elapsed}})
           {{/if}}
         </summary>
         <p>

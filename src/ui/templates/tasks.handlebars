@@ -44,6 +44,11 @@
     {{/each}}
   </tbody>
 </table>
+{{#unless tasks.length}}
+<p>
+  <h2>No tasks found by presented filters</h2>
+</p>
+{{/unless}}
 <dialog>
   <article>
     <header>
@@ -62,16 +67,14 @@
       <p>
         <fieldset>
           <legend>Predefined periods</legend>
-          <input type="radio" id="none" name="period" onclick="showCustomPeriod(false)" value="" {{#unless query.period}}checked{{/unless}} />
-          <label htmlFor="custom">None</label>
-          <input type="radio" id="custom" name="period" onclick="showCustomPeriod(true)" value="custom" {{#ifEquals query.period 'custom'}}checked{{/ifEquals}} />
-          <label htmlFor="custom">Custom</label>
           <input type="radio" id="last_day" name="period" onclick="showCustomPeriod(false)" value="24h" {{#ifEquals query.period '24h'}}checked{{/ifEquals}} />
           <label htmlFor="last_day">Last 24 hours</label>
           <input type="radio" id="last_week" name="period" onclick="showCustomPeriod(false)" value="168h" {{#ifEquals query.period '168h'}}checked{{/ifEquals}} />
           <label htmlFor="last_week">Last week</label>
           <input type="radio" id="last_month" name="period" onclick="showCustomPeriod(false)" value="720h" {{#ifEquals query.period '720h'}}checked{{/ifEquals}} />
           <label htmlFor="last_month">Last month</label>
+          <input type="radio" id="custom" name="period" onclick="showCustomPeriod(true)" value="custom" {{#ifEquals query.period 'custom'}}checked{{/ifEquals}} />
+          <label htmlFor="custom">Custom</label>
         </fieldset>
         <fieldset id="select-custom-period" role="group" {{#ifEquals query.period 'custom'}}enabled{{else}}disabled{{/ifEquals}}>
           <legend>Period from/to</legend>

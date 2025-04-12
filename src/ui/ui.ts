@@ -18,7 +18,7 @@ import {
   IN_PROGRESS_COLOR,
   NEW_COLOR,
 } from './constants';
-import { prettifyUnixTs } from './utils';
+import { durationPretty, prettifyUnixTs } from './utils';
 
 Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
   /* eslint-disable */
@@ -171,8 +171,6 @@ function metadataToKeyValue(metadata: Metadata | null): MetadataKeyValue[] {
 }
 
 // todo: add breadcrumbs
-// todo: add search and filters
-// todo: add retry callback
 
 const TIME_UNIT_REGEX = /(?<value>\d+)(?<unit>h)/i;
 
@@ -328,11 +326,15 @@ export function expressUiServer(options: UIOptions): express.Router {
               );
             })
             .slice(0, 5)
-            .map(([task, subtask]) => ({
-              name: `${getTaskName(task)} - ${getSubTaskName(subtask)}`,
-              pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
-              duration: `${getSubTaskDuration(subtask)} ms`,
-            })),
+            .map(([task, subtask]) => {
+              const duration = getSubTaskDuration(subtask);
+
+              return {
+                name: `${getTaskName(task)} - ${getSubTaskName(subtask)}`,
+                pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
+                duration: duration ? durationPretty(duration) : '-',
+              };
+            }),
           recentTasks: recentTasks.slice(0, 5).map((task) => ({
             name: task.name || task.taskId,
             pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
@@ -346,6 +348,17 @@ export function expressUiServer(options: UIOptions): express.Router {
   });
 
   app.get(`${pathPrefix}/tasks`, async (req, res, next) => {
+    // Force 24h period if not specified
+    if (!req.query.period) {
+      const url = new URL(req.originalUrl, 'http://host');
+      url.searchParams.delete('period');
+      url.searchParams.append('period', '24h');
+
+      res.redirect(`${url.pathname}${url.search}`);
+
+      return;
+    }
+
     const range = extractPeriodFilter(req.query);
 
     try {
@@ -561,23 +574,27 @@ export function expressUiServer(options: UIOptions): express.Router {
             name: getTaskName(task),
             metadata: metadataToKeyValue(task.metadata),
           },
-          // todo: display whole metadata
-          subtasks: subtasks.map((subtask) => ({
-            ...subtask,
-            showActionsColumn,
-            retryActionValue: `?action=retry&sid=${task.seqId}&st_id=${subtask.subTaskId}`,
-            name: getSubTaskName(subtask),
-            startedAt: subtask.startedAt
-              ? prettifyUnixTs(subtask.startedAt)
-              : '-',
-            failedAt: subtask.failedAt ? prettifyUnixTs(subtask.failedAt) : '-',
-            completedAt: subtask.completedAt
-              ? prettifyUnixTs(subtask.completedAt)
-              : '-',
-            ...mapTaskState(subtask.state),
-            duration: getSubTaskDuration(subtask) || '-',
-            pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
-          })),
+          subtasks: subtasks.map((subtask) => {
+            const duration = getSubTaskDuration(subtask);
+            return {
+              ...subtask,
+              showActionsColumn,
+              retryActionValue: `?action=retry&sid=${task.seqId}&st_id=${subtask.subTaskId}`,
+              name: getSubTaskName(subtask),
+              startedAt: subtask.startedAt
+                ? prettifyUnixTs(subtask.startedAt)
+                : '-',
+              failedAt: subtask.failedAt
+                ? prettifyUnixTs(subtask.failedAt)
+                : '-',
+              completedAt: subtask.completedAt
+                ? prettifyUnixTs(subtask.completedAt)
+                : '-',
+              ...mapTaskState(subtask.state),
+              duration: duration ? durationPretty(duration) : '-',
+              pageUrl: `${pathPrefix}/tasks/${task.seqId}/subtasks/${subtask.subTaskId}/points`,
+            };
+          }),
         }),
       );
     } catch (e) {
@@ -683,6 +700,7 @@ export function expressUiServer(options: UIOptions): express.Router {
             points: extendedPoints.map((point) => ({
               ...point,
               timestamp: prettifyUnixTs(point.timestamp),
+              elapsed: durationPretty(point.elapsed),
               ...mapPointEvent(point.event),
             })),
           }),
