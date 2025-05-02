@@ -7,7 +7,11 @@ describe('TaskTracker', () => {
   let tracker: TaskTracker;
 
   beforeAll(async () => {
-    redis = new Redis();
+    redis = new Redis({
+      port: process.env.REDIS_PORT
+        ? parseInt(process.env.REDIS_PORT, 10)
+        : 6379,
+    });
 
     tracker = new TaskTracker({
       redis,
