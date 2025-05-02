@@ -29,7 +29,7 @@ interface TaskDbState {
 }
 
 export type MetadataValue = string | number | boolean;
-export type Metadata = Record<string, MetadataValue>;
+export type Metadata = Record<string, MetadataValue | undefined>;
 
 export interface CreateSubTask {
   name?: string;
