@@ -166,14 +166,14 @@ export class TaskTracker {
       this.redis.status === 'ready'
         ? this.init()
         : new Promise((resolve, reject) => {
-          this.redis.once('ready', () => {
-            this.init().then(resolve).catch(reject);
-          });
+            this.redis.once('ready', () => {
+              this.init().then(resolve).catch(reject);
+            });
 
-          this.redis.once('error', (err) => {
-            reject(err);
+            this.redis.once('error', (err) => {
+              reject(err);
+            });
           });
-        });
   }
 
   private async init(): Promise<void> {
@@ -516,11 +516,10 @@ export class TaskTracker {
 
       const result: TaskState[] = [];
 
-      const keepAllStatuses = typeof params.keepCompleted === 'undefined'
-        && typeof params.keepFailed === 'undefined'
-        && typeof params.keepInProgress === 'undefined';
-
-        console.log('keepAllStatuses', keepAllStatuses);
+      const keepAllStatuses =
+        typeof params.keepCompleted === 'undefined' &&
+        typeof params.keepFailed === 'undefined' &&
+        typeof params.keepInProgress === 'undefined';
 
       for (const taskState of tasks) {
         if (!taskState) {
@@ -542,16 +541,12 @@ export class TaskTracker {
         const mappedTask = mapTaskState(state, oldRemaining);
 
         if (
-          keepAllStatuses
-          || (params.keepCompleted && mappedTask.subtasksRemaining === 0)
-          || (params.keepFailed && mappedTask.subtasksFailed > 0)
-          || (
-            params.keepInProgress
-            && (
-              !mappedTask.completeAt
-              && !mappedTask.subtasksFailed
-            )
-          )
+          keepAllStatuses ||
+          (params.keepCompleted && mappedTask.subtasksRemaining === 0) ||
+          (params.keepFailed && mappedTask.subtasksFailed > 0) ||
+          (params.keepInProgress &&
+            !mappedTask.completeAt &&
+            !mappedTask.subtasksFailed)
         ) {
           result.push(mappedTask);
         }

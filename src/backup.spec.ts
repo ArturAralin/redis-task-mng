@@ -33,13 +33,13 @@ describe('TaskTracker', () => {
           subTaskId: 't1',
           metadata: {
             meta1: 'meta1',
-          }
+          },
         },
         {
           subTaskId: 't2',
           metadata: {
             meta2: 2,
-          }
+          },
         },
         {
           subTaskId: 't3',
@@ -84,7 +84,6 @@ describe('TaskTracker', () => {
     await tracker2.waitReadiness();
 
     const r = await tracker2.getTasks();
-
 
     const subtasks = await tracker2.getSubTasks(r[0].taskId);
 

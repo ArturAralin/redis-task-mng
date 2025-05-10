@@ -7,8 +7,8 @@ class Backup {
   constructor(
     private readonly redis: Redis,
     private readonly prefix: string,
-    private writable: Writable
-  ) { }
+    private writable: Writable,
+  ) {}
 
   private async backup() {
     let cursor = '0';
@@ -23,7 +23,11 @@ class Backup {
           return;
         }
 
-        [cursor, keys] = await this.redis.scan(cursor, 'MATCH', `${this.prefix}:*`);
+        [cursor, keys] = await this.redis.scan(
+          cursor,
+          'MATCH',
+          `${this.prefix}:*`,
+        );
 
         for (const key of keys) {
           // todo: remove prefix
@@ -38,11 +42,9 @@ class Backup {
           entryHeader.writeUInt32BE(bufKey.length, 0);
           entryHeader.writeUInt32BE(dumped.length, 4);
 
-          this.writable.write(Buffer.concat([
-            Buffer.from(entryHeader),
-            bufKey,
-            dumped,
-          ]));
+          this.writable.write(
+            Buffer.concat([Buffer.from(entryHeader), bufKey, dumped]),
+          );
         }
       } while (cursor !== '0');
     } catch (error) {
@@ -51,7 +53,7 @@ class Backup {
       return;
     }
 
-    this.writable.end()
+    this.writable.end();
   }
 
   async run() {
@@ -61,12 +63,9 @@ class Backup {
 
 export async function backup(params: {
   redis: Redis;
-  prefix: string,
+  prefix: string;
 }): Promise<Readable> {
-  const {
-    redis,
-    prefix,
-  } = params;
+  const { redis, prefix } = params;
 
   const pt = new PassThrough();
 
@@ -77,33 +76,28 @@ export async function backup(params: {
   return pt;
 }
 
-
 export async function restore(params: {
   redis: Redis;
-  prefix: string,
-  backup: Stream | Buffer,
+  prefix: string;
+  backup: Stream | Buffer;
 }) {
-  const {
-    redis,
-    prefix,
-    backup,
-  } = params;
+  const { redis, prefix, backup } = params;
 
   const buffer = Buffer.isBuffer(backup)
     ? backup
     : await new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = [];
+        const chunks: Buffer[] = [];
 
-      backup.on('data', (chunk: Buffer) => {
-        chunks.push(chunk);
+        backup.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+
+        backup.on('end', () => {
+          resolve(Buffer.concat(chunks));
+        });
+
+        backup.on('error', reject);
       });
-
-      backup.on('end', () => {
-        resolve(Buffer.concat(chunks));
-      });
-
-      backup.on('error', reject);
-    });
 
   // console.log('buffer', buffer.toString());
 
@@ -117,10 +111,10 @@ export async function restore(params: {
     i++;
 
     if (
-      header.length >= 3
-      && header[header.length - 1] === 10
-      && header[header.length - 2] === 10
-      && header[header.length - 3] === 10
+      header.length >= 3 &&
+      header[header.length - 1] === 10 &&
+      header[header.length - 2] === 10 &&
+      header[header.length - 3] === 10
     ) {
       break;
     }
