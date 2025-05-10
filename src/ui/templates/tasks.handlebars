@@ -85,12 +85,12 @@
       <p>
         <fieldset>
           <legend>Statuses:</legend>
-          <input type="checkbox" id="ex_in_progress" name="ex_in_progress" {{#if query.ex_in_progress}}checked{{/if}} />
-          <label htmlFor="ex_in_progress">Exclude Waiting</label>
-          <input type="checkbox" id="ex_completed" name="ex_completed" {{#if query.ex_completed}}checked{{/if}} />
-          <label htmlFor="ex_completed">Exclude Completed</label>
-          <input type="checkbox" id="ex_failed" name="ex_failed" {{#if query.ex_failed}}checked{{/if}} />
-          <label htmlFor="ex_failed">Exclude Have failed</label>
+          <input type="checkbox" id="keep_in_progress" name="keep_in_progress" {{#if query.keep_in_progress}}checked{{/if}} />
+          <label htmlFor="keep_in_progress">Waiting</label>
+          <input type="checkbox" id="keep_completed" name="keep_completed" {{#if query.keep_completed}}checked{{/if}} />
+          <label htmlFor="keep_completed">Completed</label>
+          <input type="checkbox" id="keep_failed" name="keep_failed" {{#if query.keep_failed}}checked{{/if}} />
+          <label htmlFor="keep_failed">Have failed</label>
         </fieldset>
       </p>
       <input type="submit" value="Apply filters"/>

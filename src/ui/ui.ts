@@ -371,9 +371,15 @@ export function expressUiServer(options: UIOptions): express.Router {
             limit: 500,
           },
         }),
-        excludeCompleted: req.query.ex_completed == 'on',
-        excludeFailed: req.query.ex_failed == 'on',
-        excludeInProgress: req.query.ex_in_progress == 'on',
+        ...(req.query.keep_completed && {
+          keepCompleted: req.query.keep_completed == 'on',
+        }),
+        ...(req.query.keep_failed && {
+          keepFailed: req.query.keep_failed == 'on',
+        }),
+        ...(req.query.keep_in_progress && {
+          keepInProgress: req.query.keep_in_progress == 'on',
+        }),
       });
 
       const mappedTasks: Record<string, unknown>[] = [];

@@ -3,7 +3,11 @@ import { Redis } from 'ioredis';
 import express from 'express';
 
 async function main() {
-  const redis = new Redis();
+  const redis = new Redis({
+    port: process.env.REDIS_PORT
+      ? parseInt(process.env.REDIS_PORT, 10)
+      : 6379,
+  });
   const client = new TaskTracker({
     redis,
   });
