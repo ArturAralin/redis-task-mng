@@ -26,6 +26,7 @@ interface TaskDbState {
   metadata?: Metadata;
   failedSubTasks?: number;
   v: 1;
+  tz?: string;
 }
 
 export type MetadataValue = string | number | boolean;
@@ -35,6 +36,7 @@ export interface CreateSubTask {
   name?: string;
   subTaskId: string;
   metadata?: Metadata;
+  timezone?: string; // todo: describe all timezones
 }
 
 export interface SubTaskState {
@@ -59,6 +61,7 @@ export interface TaskState {
   subtasksFailed: number;
   metadata: Metadata | null;
   complete: boolean;
+  timezone: string | null;
 }
 
 const KEY_SEPARATOR = '##!';
@@ -101,6 +104,7 @@ function mapTaskState(dbState: TaskDbState, oldRemaining: number): TaskState {
     complete: subtasksRemaining === 0,
     name: dbState.name || null,
     metadata: dbState.metadata || null,
+    timezone: dbState.tz || null,
   };
 }
 
@@ -388,6 +392,7 @@ export class TaskTracker {
       name?: string;
       metadata?: Metadata;
       subtasks: CreateSubTask[];
+      timezone?: string;
     },
   ): Promise<{
     seqId: number;
@@ -409,6 +414,7 @@ export class TaskTracker {
         remainingSubTasks: params.subtasks.length,
         name: params.name,
         metadata: params.metadata,
+        tz: params.timezone,
         v: 1,
       };
 
@@ -613,6 +619,7 @@ export class TaskTracker {
           failedAt: null,
           name: null,
           metadata: null,
+          timezone: null,
         };
 
         // trick to prevent multiple Map.set calls
@@ -800,9 +807,9 @@ export class TaskTracker {
   // todo: add task group id
   // todo: implement clearing old jobs
   // todo: handle not found
-  // todo: fix attempts count
   // todo: add task expireAt?
   // todo: add tasks dependencies (relation between ids)
   // todo: add feature "Set task to optional". If task is optional it shouldn't be waited to complete task
   // todo: add cancel task
+  // todo: implement upcoming tasks (upcomingTill: Date)
 }

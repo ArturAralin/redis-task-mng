@@ -83,11 +83,11 @@ describe('TaskTracker', () => {
 
     await tracker2.waitReadiness();
 
-    const r = await tracker2.getTasks();
+    // const r = await tracker2.getTasks();
 
-    const subtasks = await tracker2.getSubTasks(r[0].taskId);
+    // const subtasks = await tracker2.getSubTasks(r[0].taskId);
 
-    console.log('r', r);
-    console.log('subtasks', subtasks);
+    // console.log('r', r);
+    // console.log('subtasks', subtasks);
   });
 });

@@ -18,7 +18,7 @@ import {
   IN_PROGRESS_COLOR,
   NEW_COLOR,
 } from './constants';
-import { durationPretty, getTimezones, prettifyUnixTs } from './utils';
+import { durationPretty, unixTzPrettify } from './utils';
 import cookieParser from 'cookie-parser';
 
 Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
@@ -26,9 +26,9 @@ Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
   // @ts-ignore
   return arg1 == arg2
     ? // @ts-ignore
-      options.fn(this as unknown)
+    options.fn(this as unknown)
     : // @ts-ignore
-      (options.inverse(this as unknown) as unknown);
+    (options.inverse(this as unknown) as unknown);
   /* eslint-enable */
 });
 
@@ -269,35 +269,14 @@ export function expressUiServer(options: UIOptions): express.Router {
 
   const showActionsColumn = Boolean(
     options.subtasksSection?.showRetryAction &&
-      options.subtasksSection?.onRetryAction,
+    options.subtasksSection?.onRetryAction,
   );
 
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use(`${pathPrefix}/static`, express.static(STATIC_PATH));
 
-  app.post(`${pathPrefix}/timezone`, async (req, res, next) => {
-    const timezone = req.body.timezone;
-
-    if (timezone) {
-      const offset = parseInt(timezone, 10);
-
-      res.cookie(COOKIES_TZ_NAME, offset, {
-        maxAge: 1000 * 60 * 60 * 24 * 365,
-      });
-    }
-
-    if (req.headers.referer) {
-      res.redirect(req.headers.referer);
-    } else {
-      res.redirect(pathPrefix);
-    }
-  });
-
   app.get(`${pathPrefix}/dashboard`, async (req, res, next) => {
-    const tzOffset = getTimezoneOffset(req);
-    const prettifyUnixTsZoned = prettifyUnixTs.bind(null, tzOffset);
-
     try {
       const now = new Date();
       const dayBefore = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -354,7 +333,6 @@ export function expressUiServer(options: UIOptions): express.Router {
         renderDashboardPage({
           pageTitle: 'Dashboard',
           subTasksStats,
-          timezones: getTimezones(tzOffset),
           longestSubtasks: subTasksWithDuration
             .sort(([, a], [, b]) => {
               return (
@@ -374,7 +352,7 @@ export function expressUiServer(options: UIOptions): express.Router {
           recentTasks: recentTasks.slice(0, 5).map((task) => ({
             name: task.name || task.taskId,
             pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
-            addedAt: prettifyUnixTsZoned(task.addedAt),
+            addedAt: unixTzPrettify(task.addedAt, task.timezone),
           })),
         }),
       );
@@ -385,7 +363,6 @@ export function expressUiServer(options: UIOptions): express.Router {
 
   app.get(`${pathPrefix}/tasks`, async (req, res, next) => {
     const tzOffset = getTimezoneOffset(req);
-    const prettifyUnixTsZoned = prettifyUnixTs.bind(null, tzOffset);
 
     // Force 24h period if not specified
     if (!req.query.period) {
@@ -451,9 +428,9 @@ export function expressUiServer(options: UIOptions): express.Router {
           seqId: task.seqId,
           name: getTaskName(task),
           completeAt: task.completeAt
-            ? prettifyUnixTsZoned(task.completeAt)
+            ? unixTzPrettify(task.completeAt, task.timezone)
             : '-',
-          addedAt: task.addedAt ? prettifyUnixTsZoned(task.addedAt) : '-',
+          addedAt: task.addedAt ? unixTzPrettify(task.addedAt, task.timezone) : '-',
           // todo: add duration
           complete: task.complete,
           hasFailed: task.subtasksFailed > 0,
@@ -470,7 +447,6 @@ export function expressUiServer(options: UIOptions): express.Router {
           pageTitle: 'Tasks',
           query: req.query,
           tasks: mappedTasks,
-          timezones: getTimezones(tzOffset),
         }),
       );
     } catch (e) {
@@ -479,9 +455,6 @@ export function expressUiServer(options: UIOptions): express.Router {
   });
 
   app.get(`${pathPrefix}/tasks/:seqId`, async (req, res, next) => {
-    const tzOffset = getTimezoneOffset(req);
-    const prettifyUnixTsZoned = prettifyUnixTs.bind(null, tzOffset);
-
     try {
       const [task] = await options.client.getTasks({
         seqIds: [req.params.seqId],
@@ -617,7 +590,6 @@ export function expressUiServer(options: UIOptions): express.Router {
 
       res.send(
         renderTaskPage({
-          timezones: getTimezones(tzOffset),
           pageTitle: 'Task',
           showActionsColumn,
           statusesDistribution: JSON.stringify(statusesDistribution),
@@ -625,6 +597,10 @@ export function expressUiServer(options: UIOptions): express.Router {
             ...task,
             name: getTaskName(task),
             metadata: metadataToKeyValue(task.metadata),
+            addedAt: unixTzPrettify(task.addedAt, task.timezone),
+            completedAt: task.completeAt
+              ? unixTzPrettify(task.completeAt, task.timezone)
+              : null,
           },
           subtasks: subtasks.map((subtask) => {
             const duration = getSubTaskDuration(subtask);
@@ -634,13 +610,13 @@ export function expressUiServer(options: UIOptions): express.Router {
               retryActionValue: `?action=retry&sid=${task.seqId}&st_id=${subtask.subTaskId}`,
               name: getSubTaskName(subtask),
               startedAt: subtask.startedAt
-                ? prettifyUnixTsZoned(subtask.startedAt)
+                ? unixTzPrettify(subtask.startedAt, task.timezone)
                 : '-',
               failedAt: subtask.failedAt
-                ? prettifyUnixTsZoned(subtask.failedAt)
+                ? unixTzPrettify(subtask.failedAt, task.timezone)
                 : '-',
               completedAt: subtask.completedAt
-                ? prettifyUnixTsZoned(subtask.completedAt)
+                ? unixTzPrettify(subtask.completedAt, task.timezone)
                 : '-',
               ...mapTaskState(subtask.state),
               duration: duration ? durationPretty(duration) : '-',
@@ -699,9 +675,6 @@ export function expressUiServer(options: UIOptions): express.Router {
   app.get(
     `${pathPrefix}/tasks/:seqId/subtasks/:subtaskId/points`,
     async (req, res, next) => {
-      const tzOffset = getTimezoneOffset(req);
-      const prettifyUnixTsZoned = prettifyUnixTs.bind(null, tzOffset);
-
       try {
         const [task] = await options.client.getTasks({
           seqIds: [req.params.seqId],
@@ -739,23 +712,22 @@ export function expressUiServer(options: UIOptions): express.Router {
         res.send(
           renderSubTaskPointsPage({
             pageTitle: 'Subtask',
-            timezones: getTimezones(tzOffset),
             subtask: {
               ...subtask,
               startedAt: subtask.startedAt
-                ? prettifyUnixTsZoned(subtask.startedAt)
+                ? unixTzPrettify(subtask.startedAt, task.timezone)
                 : '-',
               failedAt: subtask.failedAt
-                ? prettifyUnixTsZoned(subtask.failedAt)
+                ? unixTzPrettify(subtask.failedAt, task.timezone)
                 : '-',
               completedAt: subtask.completedAt
-                ? prettifyUnixTsZoned(subtask.completedAt)
+                ? unixTzPrettify(subtask.completedAt, task.timezone)
                 : '-',
               metadata: metadataToKeyValue(subtask.metadata),
             },
             points: extendedPoints.map((point) => ({
               ...point,
-              timestamp: prettifyUnixTsZoned(point.timestamp),
+              timestamp: unixTzPrettify(point.timestamp, task.timezone),
               elapsed: durationPretty(point.elapsed),
               ...mapPointEvent(point.event),
             })),

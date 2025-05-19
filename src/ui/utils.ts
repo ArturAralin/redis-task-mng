@@ -1,19 +1,23 @@
 import { formatDate, addMinutes } from 'date-fns';
-import { OFFSET_TO_TZ_NAME, TIMEZONES } from './constants';
+import { TZDate } from '@date-fns/tz';
+import { DEFAULT_TIMEZONE } from './constants';
 
-export function prettifyUnixTs(tzOffset: number, d: number | Date): string {
-  const date = formatDate(addMinutes(d, tzOffset), 'dd/MM/yyyy HH:mm:ss');
-  const offsetName = OFFSET_TO_TZ_NAME.get(tzOffset) || 'UTC+00:00';
+export function unixTzPrettify(
+  d: number | Date,
+  timezone?: string | null
+): string {
+  let date: TZDate;
+  const tz = timezone || DEFAULT_TIMEZONE;
 
-  return `${date} ${offsetName}`;
-}
+  if (d instanceof Date) {
+    date = TZDate.tz(tz, d);
+  } else {
+    date = TZDate.tz(tz, d);
+  }
 
-export function getTimezones(tzOffset: number) {
-  return TIMEZONES.map((tz) => ({
-    name: tz.name,
-    offset: tz.offset,
-    current: tz.offset === tzOffset,
-  }));
+  const dateStr = formatDate(date, 'dd/MM/yyyy HH:mm:ss');
+
+  return `${dateStr} ${tz}`;
 }
 
 export function durationPretty(durationInMs: number): string {

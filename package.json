@@ -35,6 +35,7 @@
     "uuid": "11.0.5"
   },
   "dependencies": {
+    "@date-fns/tz": "1.2.0",
     "cookie-parser": "1.4.7",
     "date-fns": "4.1.0",
     "express": "5.0.1",

@@ -255,6 +255,7 @@ describe('TaskTracker', () => {
 
     await tracker.createTask(taskId, {
       name: 'Sub tasks state',
+      timezone: 'Europe/Moscow',
       subtasks: [
         {
           subTaskId: 't1',
@@ -301,6 +302,7 @@ describe('TaskTracker', () => {
       subtasksRemaining: 3,
       complete: false,
       name: 'Sub tasks state',
+      timezone: 'Europe/Moscow',
     });
 
     const subTasks = await tracker.getSubTasks(taskId);

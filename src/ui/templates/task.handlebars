@@ -1,5 +1,9 @@
 <h2>Task: {{task.name}}</h2>
-<small>ID: {{task.taskId}}</small>
+<small>Task Id: {{task.taskId}}</small>
+<br><small>Added At: {{task.addedAt}}</small>
+{{#if task.completedAt}}
+  <br><small>Complete At: {{task.completeAt}}</small>
+{{/if}}
 <div style="height: 250px;">
   <canvas id="statusesDistribution"></canvas>
 </div>

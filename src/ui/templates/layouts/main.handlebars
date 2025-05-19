@@ -23,24 +23,6 @@
       </ul>
     </nav>
     {{{body}}}
-    <div class="grid">
-      <div></div>
-      <div>
-        <form method="post" action="{{serverPrefix}}/timezone">
-          <fieldset>
-            <label>
-              Timezone
-              <select name="timezone" aria-label="Select" required onchange="this.form.submit()">
-              {{#each timezones}}
-                <option value="{{offset}}" {{#if current}}selected{{/if}}>{{name}}</option>
-              {{/each}}
-              </select>
-            </label>
-          </fieldset>
-        </form>
-      </div>
-      <div></div>
-    </div>
   </main>
 </body>
 </html>

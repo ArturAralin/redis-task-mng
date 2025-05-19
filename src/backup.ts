@@ -30,7 +30,6 @@ class Backup {
         );
 
         for (const key of keys) {
-          // todo: remove prefix
           if (this.writable.closed) {
             return;
           }
@@ -99,8 +98,6 @@ export async function restore(params: {
         backup.on('error', reject);
       });
 
-  // console.log('buffer', buffer.toString());
-
   let header: number[] = [];
 
   let i = 0;
@@ -126,7 +123,6 @@ export async function restore(params: {
   while (i < buffer.length) {
     const keyLen = buffer.readUInt32BE(i);
     const dumpLen = buffer.readUint32BE(i + 4);
-    // console.log('keyLen', keyLen, 'dumpLen', dumpLen);
 
     i += 8;
 
