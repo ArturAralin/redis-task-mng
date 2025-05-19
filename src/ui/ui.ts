@@ -16,6 +16,7 @@ import {
   COMPLETE_COLOR,
   FAIL_COLOR,
   IN_PROGRESS_COLOR,
+  NEUTRAL_COLOR,
   NEW_COLOR,
 } from './constants';
 import { durationPretty, unixTzPrettify } from './utils';
@@ -26,9 +27,9 @@ Handlebars.registerHelper('ifEquals', function (arg1, arg2, options) {
   // @ts-ignore
   return arg1 == arg2
     ? // @ts-ignore
-    options.fn(this as unknown)
+      options.fn(this as unknown)
     : // @ts-ignore
-    (options.inverse(this as unknown) as unknown);
+      (options.inverse(this as unknown) as unknown);
   /* eslint-enable */
 });
 
@@ -236,12 +237,32 @@ function getQueryRegex(query: unknown): RegExp | null {
   return null;
 }
 
-function getTimezoneOffset(req: express.Request): number {
-  if (req.cookies[COOKIES_TZ_NAME]) {
-    return parseInt(req.cookies[COOKIES_TZ_NAME], 10);
+function resolveTaskStatus(task: TaskState) {
+  if (task.complete) {
+    return {
+      color: COMPLETE_COLOR,
+      text: 'Done',
+    };
   }
 
-  return 0;
+  if (task.upcoming) {
+    return {
+      color: NEUTRAL_COLOR,
+      text: 'Upcoming',
+    };
+  }
+
+  if (task.subtasksFailed > 0) {
+    return {
+      color: FAIL_COLOR,
+      text: 'Failed',
+    };
+  }
+
+  return {
+    color: NEW_COLOR,
+    text: 'Waiting',
+  };
 }
 
 export function expressUiServer(options: UIOptions): express.Router {
@@ -269,7 +290,7 @@ export function expressUiServer(options: UIOptions): express.Router {
 
   const showActionsColumn = Boolean(
     options.subtasksSection?.showRetryAction &&
-    options.subtasksSection?.onRetryAction,
+      options.subtasksSection?.onRetryAction,
   );
 
   app.use(express.urlencoded({ extended: true }));
@@ -362,8 +383,6 @@ export function expressUiServer(options: UIOptions): express.Router {
   });
 
   app.get(`${pathPrefix}/tasks`, async (req, res, next) => {
-    const tzOffset = getTimezoneOffset(req);
-
     // Force 24h period if not specified
     if (!req.query.period) {
       const url = new URL(req.originalUrl, 'http://host');
@@ -395,6 +414,9 @@ export function expressUiServer(options: UIOptions): express.Router {
         }),
         ...(req.query.keep_in_progress && {
           keepInProgress: req.query.keep_in_progress == 'on',
+        }),
+        ...(req.query.keep_upcoming && {
+          keepUpcoming: req.query.keep_upcoming == 'on',
         }),
       });
 
@@ -430,14 +452,12 @@ export function expressUiServer(options: UIOptions): express.Router {
           completeAt: task.completeAt
             ? unixTzPrettify(task.completeAt, task.timezone)
             : '-',
-          addedAt: task.addedAt ? unixTzPrettify(task.addedAt, task.timezone) : '-',
+          addedAt: task.addedAt
+            ? unixTzPrettify(task.addedAt, task.timezone)
+            : '-',
           // todo: add duration
-          complete: task.complete,
-          hasFailed: task.subtasksFailed > 0,
-          completedColor: COMPLETE_COLOR,
-          notCompletedColor: NEW_COLOR,
-          failedColor: FAIL_COLOR,
           pageUrl: `${pathPrefix}/tasks/${task.seqId}`,
+          status: resolveTaskStatus(task),
           metadata,
         });
       }
@@ -601,6 +621,7 @@ export function expressUiServer(options: UIOptions): express.Router {
             completedAt: task.completeAt
               ? unixTzPrettify(task.completeAt, task.timezone)
               : null,
+            status: resolveTaskStatus(task),
           },
           subtasks: subtasks.map((subtask) => {
             const duration = getSubTaskDuration(subtask);

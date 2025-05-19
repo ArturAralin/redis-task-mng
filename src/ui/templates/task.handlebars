@@ -1,5 +1,6 @@
 <h2>Task: {{task.name}}</h2>
 <small>Task Id: {{task.taskId}}</small>
+<br><small>Status: {{task.status.text}}</small>
 <br><small>Added At: {{task.addedAt}}</small>
 {{#if task.completedAt}}
   <br><small>Complete At: {{task.completeAt}}</small>

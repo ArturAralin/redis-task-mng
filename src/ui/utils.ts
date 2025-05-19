@@ -4,7 +4,7 @@ import { DEFAULT_TIMEZONE } from './constants';
 
 export function unixTzPrettify(
   d: number | Date,
-  timezone?: string | null
+  timezone?: string | null,
 ): string {
   let date: TZDate;
   const tz = timezone || DEFAULT_TIMEZONE;
@@ -28,19 +28,19 @@ export function durationPretty(durationInMs: number): string {
   const parts = [];
 
   if (h > 0) {
-    parts.push(`${h}h`);
+    parts.push(`${h} h`);
   }
 
   if (m > 0) {
-    parts.push(`${m}m`);
+    parts.push(`${m} m`);
   }
 
   if (s > 0) {
-    parts.push(`${s}s`);
+    parts.push(`${s} s`);
   }
 
   if (ms > 0) {
-    parts.push(`${ms}ms`);
+    parts.push(`${ms} ms`);
   }
 
   return parts.join(' ');

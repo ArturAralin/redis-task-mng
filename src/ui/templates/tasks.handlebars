@@ -30,15 +30,7 @@
       <td>{{this.addedAt}}</td>
       <td>{{this.completeAt}}</td>
       <td>
-        {{#if this.complete }}
-        <kbd style="background-color: {{this.completedColor}};">Completed</kbd>
-        {{else}}
-          {{#if this.hasFailed}}
-            <kbd style="background-color: {{this.failedColor}};">Have failed</kbd>
-          {{else}}
-            <kbd style="background-color: {{this.notCompletedColor}};">Waiting</kbd>
-          {{/if}}
-        {{/if}}
+        <kbd style="background-color: {{this.status.color}};">{{this.status.text}}</kbd>
       </td>
     </tr>
     {{/each}}
@@ -91,6 +83,8 @@
           <label htmlFor="keep_completed">Completed</label>
           <input type="checkbox" id="keep_failed" name="keep_failed" {{#if query.keep_failed}}checked{{/if}} />
           <label htmlFor="keep_failed">Have failed</label>
+          <input type="checkbox" id="keep_upcoming" name="keep_upcoming" {{#if query.keep_upcoming}}checked{{/if}} />
+          <label htmlFor="keep_upcoming">Upcoming</label>
         </fieldset>
       </p>
       <input type="submit" value="Apply filters"/>

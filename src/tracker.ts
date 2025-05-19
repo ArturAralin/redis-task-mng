@@ -27,6 +27,7 @@ interface TaskDbState {
   failedSubTasks?: number;
   v: 1;
   tz?: string;
+  umng?: boolean; // Upcoming
 }
 
 export type MetadataValue = string | number | boolean;
@@ -62,6 +63,7 @@ export interface TaskState {
   metadata: Metadata | null;
   complete: boolean;
   timezone: string | null;
+  upcoming: boolean;
 }
 
 const KEY_SEPARATOR = '##!';
@@ -105,6 +107,7 @@ function mapTaskState(dbState: TaskDbState, oldRemaining: number): TaskState {
     name: dbState.name || null,
     metadata: dbState.metadata || null,
     timezone: dbState.tz || null,
+    upcoming: dbState.umng || false,
   };
 }
 
@@ -153,6 +156,8 @@ export class TaskTracker {
   private subTaskInProgressLua: string | null = null;
 
   private subTaskFailedLua: string | null = null;
+
+  private changeToWaitingLua: string | null = null;
 
   constructor(params: TaskTrackerParams) {
     this.redis = params.redis;
@@ -340,6 +345,25 @@ export class TaskTracker {
       store_event(seq_id, subtask_id, failed_at, ${SubTaskEvents.Failed}, metadata)
     `;
 
+    const luaChangeToWaiting = `
+      local task_id = KEYS[1]
+
+      local seq_id = redis.call('HGET', '${this.tasksIndexKey}', task_id)
+
+      if not seq_id then
+        return 't_not_found'
+      end
+
+      local state = redis.call('HGET', '${this.tasksStateKey}', seq_id)
+
+      state = cjson.decode(state)
+      state['umng'] = false
+
+      redis.call('HSET', '${this.tasksStateKey}', seq_id, cjson.encode(state))
+
+      return seq_id
+    `;
+
     this.createTaskLua = (await this.redis.script(
       'LOAD',
       luaCreateTask,
@@ -355,6 +379,10 @@ export class TaskTracker {
     this.subTaskFailedLua = (await this.redis.script(
       'LOAD',
       luaSubTaskFailed,
+    )) as string;
+    this.changeToWaitingLua = (await this.redis.script(
+      'LOAD',
+      luaChangeToWaiting,
     )) as string;
   }
 
@@ -383,6 +411,16 @@ export class TaskTracker {
     }
   }
 
+  private async changeToWaiting(taskId: string): Promise<number> {
+    const seqId = (await this.redisEvalScript(
+      this.changeToWaitingLua,
+      1,
+      taskId,
+    )) as string;
+
+    return parseInt(seqId, 10);
+  }
+
   /**
    * Create a new task. Creation is idempotent by taskId key
    */
@@ -391,15 +429,34 @@ export class TaskTracker {
     params: {
       name?: string;
       metadata?: Metadata;
-      subtasks: CreateSubTask[];
+      subtasks?: CreateSubTask[];
       timezone?: string;
+      /**
+       * Nothing be changed except changing upcoming task to going
+       */
+      changeToWaiting?: boolean;
+      /**
+       * For cases when task created for future
+       */
+      upcoming?: boolean;
+      // working only with upcoming = true
+      // stayGoingAt?: Date;
     },
   ): Promise<{
     seqId: number;
     created: boolean;
   }> {
+    if (params.changeToWaiting) {
+      const seqId = await this.changeToWaiting(taskId);
+
+      return {
+        seqId,
+        created: false,
+      };
+    }
+
     // todo: validate sub task ids /a-z0-9_-/
-    if (params.subtasks.length === 0) {
+    if (!params.subtasks || params.subtasks.length === 0) {
       throw new Error('No subtasks');
     }
 
@@ -407,6 +464,7 @@ export class TaskTracker {
       const seqId = await this.redis.incr(this.tasksCounterKey);
 
       const taskState: TaskDbState = {
+        v: 1,
         taskId,
         seqId,
         addedAt: Date.now(),
@@ -414,8 +472,8 @@ export class TaskTracker {
         remainingSubTasks: params.subtasks.length,
         name: params.name,
         metadata: params.metadata,
-        tz: params.timezone,
-        v: 1,
+        ...(params.timezone && { tz: params.timezone }),
+        ...(params.upcoming && { umng: params.upcoming }),
       };
 
       const subtasksIds: string[] = [];
@@ -477,6 +535,7 @@ export class TaskTracker {
       keepCompleted?: boolean;
       keepFailed?: boolean;
       keepInProgress?: boolean;
+      keepUpcoming?: boolean;
       pagination?: {
         limit?: number;
         offset?: number;
@@ -525,7 +584,8 @@ export class TaskTracker {
       const keepAllStatuses =
         typeof params.keepCompleted === 'undefined' &&
         typeof params.keepFailed === 'undefined' &&
-        typeof params.keepInProgress === 'undefined';
+        typeof params.keepInProgress === 'undefined' &&
+        typeof params.keepUpcoming === 'undefined';
 
       for (const taskState of tasks) {
         if (!taskState) {
@@ -548,6 +608,7 @@ export class TaskTracker {
 
         if (
           keepAllStatuses ||
+          (params.keepUpcoming && mappedTask.upcoming) ||
           (params.keepCompleted && mappedTask.subtasksRemaining === 0) ||
           (params.keepFailed && mappedTask.subtasksFailed > 0) ||
           (params.keepInProgress &&
@@ -811,5 +872,4 @@ export class TaskTracker {
   // todo: add tasks dependencies (relation between ids)
   // todo: add feature "Set task to optional". If task is optional it shouldn't be waited to complete task
   // todo: add cancel task
-  // todo: implement upcoming tasks (upcomingTill: Date)
 }

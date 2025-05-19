@@ -466,4 +466,49 @@ describe('TaskTracker', () => {
     await tracker.startSubTask('taskId', 'subTaskId');
     await tracker.isSubTaskComplete('taskId', 'subTaskId');
   });
+
+  test('upcoming task', async () => {
+    const taskId: string = uuid.v4();
+
+    const createTask = await tracker.createTask(taskId, {
+      upcoming: true,
+      subtasks: [
+        {
+          subTaskId: 't1',
+        },
+        {
+          subTaskId: 't2',
+        },
+        {
+          subTaskId: 't3',
+        },
+      ],
+    });
+
+    expect(createTask).toMatchObject({
+      seqId: expect.any(Number),
+      created: true,
+    });
+
+    const beforeUpdate = await tracker.getTaskState(taskId);
+
+    expect(beforeUpdate).toMatchObject({
+      upcoming: true,
+    });
+
+    const update = await tracker.createTask(taskId, {
+      changeToWaiting: true,
+    });
+
+    expect(update).toMatchObject({
+      seqId: createTask.seqId,
+      created: false,
+    });
+
+    const afterUpdate = await tracker.getTaskState(taskId);
+
+    expect(afterUpdate).toMatchObject({
+      upcoming: false,
+    });
+  });
 });
