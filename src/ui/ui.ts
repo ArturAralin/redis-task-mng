@@ -307,6 +307,10 @@ export function expressUiServer(options: UIOptions): express.Router {
           from: dayBefore,
           to: now,
         },
+        keepCompleted: true,
+        keepFailed: true,
+        keepInProgress: true,
+        keepUpcoming: false,
       });
 
       const subTasksStats = {

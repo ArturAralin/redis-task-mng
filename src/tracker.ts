@@ -622,6 +622,7 @@ export class TaskTracker {
           (params.keepCompleted && mappedTask.subtasksRemaining === 0) ||
           (params.keepFailed && mappedTask.subtasksFailed > 0) ||
           (params.keepInProgress &&
+            !mappedTask.upcoming &&
             !mappedTask.completeAt &&
             !mappedTask.subtasksFailed)
         ) {
