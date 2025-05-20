@@ -356,6 +356,10 @@ export class TaskTracker {
 
       local state = redis.call('HGET', '${this.tasksStateKey}', seq_id)
 
+      if state['umng'] == false then
+        return seq_id
+      end
+
       state = cjson.decode(state)
       state['umng'] = false
 
@@ -411,12 +415,16 @@ export class TaskTracker {
     }
   }
 
-  private async changeToWaiting(taskId: string): Promise<number> {
+  private async changeToWaiting(taskId: string): Promise<number | null> {
     const seqId = (await this.redisEvalScript(
       this.changeToWaitingLua,
       1,
       taskId,
     )) as string;
+
+    if (seqId === 't_not_found') {
+      return null;
+    }
 
     return parseInt(seqId, 10);
   }
@@ -449,10 +457,12 @@ export class TaskTracker {
     if (params.changeToWaiting) {
       const seqId = await this.changeToWaiting(taskId);
 
-      return {
-        seqId,
-        created: false,
-      };
+      if (seqId) {
+        return {
+          seqId,
+          created: false,
+        };
+      }
     }
 
     // todo: validate sub task ids /a-z0-9_-/

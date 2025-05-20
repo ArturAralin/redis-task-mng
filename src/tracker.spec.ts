@@ -467,7 +467,7 @@ describe('TaskTracker', () => {
     await tracker.isSubTaskComplete('taskId', 'subTaskId');
   });
 
-  test('upcoming task', async () => {
+  test('change upcoming task to waiting', async () => {
     const taskId: string = uuid.v4();
 
     const createTask = await tracker.createTask(taskId, {
@@ -509,6 +509,41 @@ describe('TaskTracker', () => {
 
     expect(afterUpdate).toMatchObject({
       upcoming: false,
+    });
+  });
+
+  test('should create waiting task', async () => {
+    const taskId: string = uuid.v4();
+
+    const createTask = await tracker.createTask(taskId, {
+      changeToWaiting: true,
+      subtasks: [
+        {
+          subTaskId: 't1',
+        },
+        {
+          subTaskId: 't2',
+        },
+        {
+          subTaskId: 't3',
+        },
+      ],
+    });
+
+    expect(createTask).toMatchObject({
+      seqId: expect.any(Number),
+      created: true,
+    });
+
+    const taskState = await tracker.getTaskState(taskId);
+
+    expect(taskState).toMatchObject({
+      taskId,
+      addedAt: expect.any(Number),
+      completeAt: null,
+      subtasksCount: 3,
+      subtasksRemaining: 3,
+      complete: false,
     });
   });
 });
