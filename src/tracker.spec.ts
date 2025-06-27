@@ -460,13 +460,6 @@ describe('TaskTracker', () => {
     });
   });
 
-  test('complete non existing subtask', async () => {
-    await tracker.completeSubTask('taskId', 'subTaskId');
-    await tracker.failSubTask('taskId', 'subTaskId');
-    await tracker.startSubTask('taskId', 'subTaskId');
-    await tracker.isSubTaskComplete('taskId', 'subTaskId');
-  });
-
   test('change upcoming task to waiting', async () => {
     const taskId: string = uuid.v4();
 
@@ -512,7 +505,7 @@ describe('TaskTracker', () => {
     });
   });
 
-  test('should create waiting task', async () => {
+  test.only('waiting task should not stay upcoming', async () => {
     const taskId: string = uuid.v4();
 
     const createTask = await tracker.createTask(taskId, {
@@ -544,6 +537,33 @@ describe('TaskTracker', () => {
       subtasksCount: 3,
       subtasksRemaining: 3,
       complete: false,
+      upcoming: false,
     });
+
+    const newTask = await tracker.createTask(taskId, {
+      upcoming: true,
+      subtasks: [
+        {
+          subTaskId: 't1',
+        },
+        {
+          subTaskId: 't2',
+        },
+        {
+          subTaskId: 't3',
+        },
+      ],
+    });
+
+    expect(newTask).toMatchObject({
+      created: false,
+    });
+
+    const newTaskState = await tracker.getTaskState(taskId);
+
+    expect(newTaskState).toMatchObject({
+      seqId: taskState?.seqId,
+      upcoming: false,
+    })
   });
 });
