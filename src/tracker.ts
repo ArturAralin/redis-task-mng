@@ -746,7 +746,7 @@ export class TaskTracker {
         ? JSON.stringify(params.metadata)
         : 'null';
 
-      const remainingTasks = await this.redisEvalScript(
+      const result = await this.redisEvalScript(
         this.completeSubTaskLua,
         4,
         taskId,
@@ -755,8 +755,12 @@ export class TaskTracker {
         metadata,
       );
 
+      if (result === 't_not_found') {
+        throw new Error(`Sub task "${subTaskId}" in task "${taskId}" not found`);
+      }
+
       return {
-        allTasksCompleted: remainingTasks === 0,
+        allTasksCompleted: result === 0,
       };
     } catch (error) {
       patchError(error, 'Error in completeSubTask');
@@ -778,7 +782,7 @@ export class TaskTracker {
         ? JSON.stringify(params.metadata)
         : 'null';
 
-      await this.redisEvalScript(
+      const result = await this.redisEvalScript(
         this.subTaskInProgressLua,
         4,
         taskId,
@@ -786,6 +790,10 @@ export class TaskTracker {
         ts,
         metadata,
       );
+
+      if (result === 't_not_found') {
+        throw new Error(`Sub task "${subTaskId}" in task "${taskId}" not found`);
+      }
     } catch (error) {
       patchError(error, 'Error in startSubTask');
 
@@ -806,7 +814,7 @@ export class TaskTracker {
         ? JSON.stringify(params.metadata)
         : 'null';
 
-      await this.redisEvalScript(
+      const result = await this.redisEvalScript(
         this.subTaskFailedLua,
         4,
         taskId,
@@ -814,6 +822,10 @@ export class TaskTracker {
         ts,
         metadata,
       );
+
+      if (result === 't_not_found') {
+        throw new Error(`Sub task "${subTaskId}" in task "${taskId}" not found`);
+      }
     } catch (error) {
       patchError(error, 'Error in failSubTask');
 
@@ -824,6 +836,11 @@ export class TaskTracker {
   async isSubTaskComplete(taskId: string, subTaskId: string): Promise<boolean> {
     try {
       const seqId = await this.redis.hget(this.tasksIndexKey, taskId);
+
+      if (!seqId) {
+        throw new Error(`Task "${taskId}" not found`);
+      }
+
       const has = await this.redis.sismember(
         `${this.remainingSubTasksPrefix}:${seqId}`,
         subTaskId,
