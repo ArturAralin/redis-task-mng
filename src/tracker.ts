@@ -900,4 +900,5 @@ export class TaskTracker {
   // todo: add tasks dependencies (relation between ids)
   // todo: add feature "Set task to optional". If task is optional it shouldn't be waited to complete task
   // todo: add cancel task
+  // todo: implement extend sub tasks
 }

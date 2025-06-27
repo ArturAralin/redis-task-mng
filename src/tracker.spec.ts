@@ -505,7 +505,7 @@ describe('TaskTracker', () => {
     });
   });
 
-  test.only('waiting task should not stay upcoming', async () => {
+  test('waiting task should not stay upcoming', async () => {
     const taskId: string = uuid.v4();
 
     const createTask = await tracker.createTask(taskId, {
